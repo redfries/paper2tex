@@ -48,6 +48,10 @@ Built-in tier-1 recipes for the most common templates:
 
 ---
 
+> 📋 **First time?** Read the **[Document Preparation Guide](PREREQUISITES.md)** to make sure your `.docx` is ready. 5 minutes of prep saves hours of fixing.
+
+---
+
 ## Quick Start
 
 ### 1. Install Prerequisites
