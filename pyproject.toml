@@ -1,0 +1,22 @@
+[project]
+name = "paper2tex"
+version = "0.1.0"
+description = "Convert academic .docx papers to conference-formatted LaTeX"
+requires-python = ">=3.10"
+dependencies = [
+    "lxml>=5.0",
+    "python-docx>=1.1",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+# Full extraction stack (install with: uv pip install -e ".[full]")
+full = [
+    "anystyle-py>=0.1",       # Bibliography parsing (CRF-based)
+    "pdf2image>=1.16",         # PDF page rendering for visual QA
+    "Pillow>=10.0",            # Image handling
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

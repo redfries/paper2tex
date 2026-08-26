@@ -1,0 +1,58 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Distribution
+dist/
+build/
+*.egg-info/
+
+# Work directories (generated during conversion)
+work/
+submission/
+visual_qa/
+
+# Test outputs
+tests/corpus/*.docx
+tests/corpus/work/
+
+# Overleaf zips (generated)
+overleaf.zip
+
+# LaTeX auxiliary files
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.lot
+*.lof
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.synctex(busy)
+*.pdf
+
+# Compiled tex artifacts in work dirs
+*.dvi
+*.xdv
