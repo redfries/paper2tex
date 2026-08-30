@@ -54,15 +54,38 @@ class ExtractionResult:
     figure_registry: Optional[Dict[str, Any]] = None
     bib_registry: Optional[Dict[str, Any]] = None
 
+import shutil
+import os
+
+def find_pandoc_exe() -> Optional[str]:
+    exe = shutil.which("pandoc")
+    if exe:
+        return exe
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Pandoc" / "pandoc.exe",
+        Path(os.environ.get("ProgramFiles", "")) / "Pandoc" / "pandoc.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "")) / "Pandoc" / "pandoc.exe",
+        Path(r"C:\Program Files\Pandoc\pandoc.exe"),
+    ]
+    for c in candidates:
+        if c and c.exists():
+            return str(c)
+    return None
+
 def run_pandoc(input_path: Path, output_dir: Path) -> Tuple[Optional[Path], Optional[Path], List[str]]:
     warnings = []
     content_md = output_dir / "content.md"
     content_tex = output_dir / "content.tex"
+    pandoc_exe = find_pandoc_exe()
+
+    if not pandoc_exe:
+        warnings.append("Pandoc not found. Skipping markdown and latex generation.")
+        return None, None, warnings
 
     # md
     try:
         subprocess.run(
-            ["pandoc", str(input_path), "-f", "docx", "-t", "markdown", "-o", str(content_md)],
+            [pandoc_exe, str(input_path), "-f", "docx", "-t", "markdown", "-o", str(content_md)],
             check=True, capture_output=True, text=True
         )
     except FileNotFoundError:
@@ -75,7 +98,7 @@ def run_pandoc(input_path: Path, output_dir: Path) -> Tuple[Optional[Path], Opti
     # tex
     try:
         subprocess.run(
-            ["pandoc", str(input_path), "-f", "docx", "-t", "latex", "-o", str(content_tex)],
+            [pandoc_exe, str(input_path), "-f", "docx", "-t", "latex", "-o", str(content_tex)],
             check=True, capture_output=True, text=True
         )
     except FileNotFoundError:
@@ -97,10 +120,18 @@ def extract(docx_path: Path, work_dir: Path, figures_dir: Optional[Path] = None)
 
     all_warnings = []
     
+    # Safe copy in case file is currently locked/opened in MS Word
+    safe_docx = work_dir / f"safe_{docx_path.name}"
+    try:
+        shutil.copy2(docx_path, safe_docx)
+        target_docx = safe_docx
+    except Exception:
+        target_docx = docx_path
+
     # 1. Preprocess
     logger.info("Running preprocessor...")
     try:
-        prep_result = preprocess_docx(docx_path, work_dir)
+        prep_result = preprocess_docx(target_docx, work_dir)
         preprocessed_docx = prep_result.modified_docx_path
         cross_ref_map = prep_result.cross_ref_map
         citation_type = prep_result.citation_type

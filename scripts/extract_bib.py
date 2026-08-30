@@ -212,24 +212,25 @@ def _extract_references_section(doc_xml: etree._Element) -> list[str]:
     # Find the References heading
     for i, para in enumerate(paragraphs):
         pPr = para.find("w:pPr", namespaces=NS)
+        text = _get_paragraph_text(para).strip()
+        cleaned = re.sub(r"^[\d\.\sIVXLCDMivxlcdm\:\-]+", "", text).strip().lower()
+
         if pPr is not None:
             pStyle = pPr.find("w:pStyle", namespaces=NS)
             if pStyle is not None:
                 style = pStyle.get(f"{{{NS['w']}}}val", "")
                 if "heading" in style.lower():
-                    text = _get_paragraph_text(para).strip().lower()
-                    if text in ("references", "bibliography", "works cited",
-                                "reference", "literature", "cited references"):
+                    if cleaned in ("references", "bibliography", "works cited",
+                                "reference", "literature", "cited references") or "reference" in cleaned:
                         ref_start_idx = i + 1
                         break
 
         # Also check plain text (some students don't use heading style)
-        text = _get_paragraph_text(para).strip()
-        if text.lower() in ("references", "bibliography", "works cited"):
-            # Check if it looks like a heading (short, possibly bold)
-            if len(text.split()) <= 3:
-                ref_start_idx = i + 1
-                break
+        if cleaned in ("references", "bibliography", "works cited", "reference", "literature") or (
+            ("reference" in cleaned or "bibliography" in cleaned) and len(text.split()) <= 4
+        ):
+            ref_start_idx = i + 1
+            break
 
     if ref_start_idx is None:
         return []
@@ -306,8 +307,8 @@ def _parse_reference_text(ref_text: str, index: int) -> BibEntry:
             authors = cleaned_text[:50]
 
     # Generate key
-    first_word = re.sub(r"[^a-zA-Z]", "", authors.split(",")[0].split()[-1] if authors else "ref").lower()
-    title_word = re.sub(r"[^a-zA-Z]", "", title.split()[0] if title else "unknown").lower()
+    first_word = re.sub(r"[^a-zA-Z0-9]", "", authors.split(",")[0].split()[-1] if authors else "ref").lower()
+    title_word = re.sub(r"[^a-zA-Z0-9]", "", title.split()[0] if title else "unknown").lower()
     key = f"{first_word}{year}{title_word}"
 
     return BibEntry(

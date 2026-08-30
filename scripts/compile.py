@@ -172,7 +172,7 @@ ERROR_PATTERNS: list[tuple[str, ErrorCategory, bool, str]] = [
         "Remove duplicate package load",
     ),
     (
-        r"Font .* not (?:found|available)|Cannot determine size of graphic",
+        r"! Font \S+ not (?:loadable|found)|Cannot determine size of graphic",
         ErrorCategory.FONT_NOT_AVAILABLE,
         True,
         "Add \\usepackage{fontspec} for xelatex",
@@ -417,6 +417,21 @@ def _escape_special_chars_in_line(line: str) -> str:
     return result
 
 
+def find_tectonic_exe() -> str | None:
+    exe = shutil.which("tectonic")
+    if exe:
+        return exe
+    candidates = [
+        Path(sys.executable).parent / "Scripts" / "tectonic.exe",
+        Path(sys.executable).parent / "tectonic.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Python" / "Python312" / "Scripts" / "tectonic.exe",
+        Path(r"C:\Program Files\Tectonic\tectonic.exe"),
+    ]
+    for c in candidates:
+        if c and c.exists():
+            return str(c)
+    return None
+
 def _run_compiler(
     tex_path: Path,
     engine: str = "tectonic",
@@ -436,10 +451,10 @@ def _run_compiler(
     stem = tex_path.stem
 
     if engine == "tectonic":
-        exe = shutil.which("tectonic")
+        exe = find_tectonic_exe()
         if not exe:
             return False, "tectonic not found", None
-        cmd = [exe, str(tex_path), "--keep-logs"]
+        cmd = [exe, tex_path.name, "--keep-logs"]
     elif engine == "latexmk":
         exe = shutil.which("latexmk")
         if not exe:
@@ -449,7 +464,7 @@ def _run_compiler(
             "-interaction=nonstopmode",
             "-halt-on-error",
             "-file-line-error",
-            str(tex_path),
+            tex_path.name,
         ]
     else:
         return False, f"Unknown engine: {engine}", None
@@ -513,7 +528,10 @@ def compile_latex(
 
     engine_used = None
     for engine in engines:
-        if shutil.which(engine):
+        if engine == "tectonic" and find_tectonic_exe():
+            engine_used = engine
+            break
+        elif shutil.which(engine):
             engine_used = engine
             break
 

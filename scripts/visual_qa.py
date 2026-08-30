@@ -63,13 +63,33 @@ class VisualQAResult:
         return "\n".join(lines)
 
 
+import os
+
+def find_poppler_tool(tool_name: str) -> str | None:
+    exe = shutil.which(tool_name)
+    if exe:
+        return exe
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "poppler" / "bin" / f"{tool_name}.exe",
+        Path(os.environ.get("ProgramFiles", "")) / "poppler" / "bin" / f"{tool_name}.exe",
+    ]
+    winget_packages = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+    if winget_packages.exists():
+        for p in winget_packages.glob(f"**/{tool_name}.exe"):
+            if p.exists():
+                return str(p)
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return None
+
 def _render_pdf_to_png_pdftoppm(
     pdf_path: Path,
     output_dir: Path,
     dpi: int = 200,
 ) -> list[Path]:
     """Render PDF pages to PNG using pdftoppm (from poppler-utils)."""
-    pdftoppm = shutil.which("pdftoppm")
+    pdftoppm = find_poppler_tool("pdftoppm")
     if not pdftoppm:
         raise FileNotFoundError("pdftoppm not found. Install poppler: scoop install poppler")
 
