@@ -156,13 +156,18 @@ TIER1_RECIPES: dict[str, dict] = {
 def _match_tier1(name: str) -> TemplateSpec | None:
     """Try to match a conference name to a tier-1 recipe."""
     name_lower = name.lower().strip()
+    norm_input = re.sub(r"[^a-z0-9]", "", name_lower)
 
     for key, recipe in TIER1_RECIPES.items():
-        recipe_name_lower = recipe["name"].lower()
-        # Check various patterns
-        if (key in name_lower or
-            recipe_name_lower in name_lower or
-            recipe.get("document_class", "") in name_lower):
+        norm_key = re.sub(r"[^a-z0-9]", "", key)
+        norm_recipe_name = re.sub(r"[^a-z0-9]", "", recipe["name"].lower())
+        norm_doc_class = re.sub(r"[^a-z0-9]", "", recipe.get("document_class", "").lower())
+        
+        if (norm_key in norm_input or
+            norm_input in norm_key or
+            norm_input in norm_recipe_name or
+            norm_recipe_name in norm_input or
+            norm_doc_class in norm_input):
             spec = TemplateSpec(**{k: v for k, v in recipe.items()
                                    if k in TemplateSpec.__dataclass_fields__})
             log.info("Matched tier-1 recipe: %s", spec.name)

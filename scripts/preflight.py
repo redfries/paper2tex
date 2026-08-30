@@ -147,7 +147,7 @@ def run_preflight() -> PreflightResult:
     result.tools.append(latexmk)
 
     # pdftotext (for character verification in final PDF)
-    pdftotext = _check_command("pdftotext", ["pdftotext"])
+    pdftotext = _check_command("pdftotext", ["pdftotext"], version_flag="-v")
     if not pdftotext.found:
         pdftotext.install_hint = (
             "Install poppler-utils: scoop install poppler  OR  "

@@ -100,7 +100,7 @@ class CompileResult:
 ERROR_PATTERNS: list[tuple[str, ErrorCategory, bool, str]] = [
     # (regex_pattern, category, auto_fixable, fix_template)
     (
-        r"Undefined control sequence.*\\(\w+)",
+        r"Undefined control sequence",
         ErrorCategory.UNDEFINED_COMMAND,
         True,
         "Add missing package or define command",
@@ -228,22 +228,43 @@ def _classify_errors(log_content: str) -> list[CompileError]:
     """Parse a LaTeX .log file and classify errors."""
     errors: list[CompileError] = []
     seen: set[str] = set()  # Deduplicate
+    lines = log_content.split("\n")
 
-    for line in log_content.split("\n"):
+    for i, line in enumerate(lines):
         for pattern, category, auto_fixable, fix_desc in ERROR_PATTERNS:
             match = re.search(pattern, line, re.IGNORECASE)
             if match:
                 msg = line.strip()[:200]
-                dedup_key = f"{category.value}:{match.group()}"
+                line_num = 0
+                file_name = ""
+
+                # Look for file:line format
+                loc_match = re.match(r"([^:]+):(\d+):", line)
+                if loc_match:
+                    file_name = loc_match.group(1)
+                    line_num = int(loc_match.group(2))
+                else:
+                    # Look ahead 1-3 lines for l.<num> <command>
+                    for offset in range(1, min(4, len(lines) - i)):
+                        next_line = lines[i + offset]
+                        l_match = re.search(r"l\.(\d+)\s*(.*)", next_line)
+                        if l_match:
+                            line_num = int(l_match.group(1))
+                            tail = l_match.group(2).strip()
+                            if "\\" in tail:
+                                cmd_match = re.search(r"\\(\w+)", tail)
+                                if cmd_match and "\\" not in msg:
+                                    msg = f"{msg} \\{cmd_match.group(1)}"
+                            break
+
+                dedup_key = f"{category.value}:{msg}"
                 if dedup_key not in seen:
                     seen.add(dedup_key)
-                    # Try to extract file and line number
-                    loc_match = re.match(r"([^:]+):(\d+):", line)
                     errors.append(CompileError(
                         category=category,
                         message=msg,
-                        file=loc_match.group(1) if loc_match else "",
-                        line=int(loc_match.group(2)) if loc_match else 0,
+                        file=file_name,
+                        line=line_num,
                         auto_fixable=auto_fixable,
                         fix_description=fix_desc,
                     ))

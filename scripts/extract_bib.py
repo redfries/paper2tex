@@ -270,27 +270,40 @@ def _parse_reference_text(ref_text: str, index: int) -> BibEntry:
     doi_match = re.search(r"10\.\d{4,}/[^\s,]+", ref_text)
     doi = doi_match.group().rstrip(".") if doi_match else ""
 
-    # Heuristic: text before first year is likely authors
-    authors = ""
+    # Clean leading citation number like [1] or 1.
+    cleaned_text = re.sub(r"^\[\d+\]\s*", "", ref_text).strip()
+    cleaned_text = re.sub(r"^\d+\.\s*", "", cleaned_text).strip()
+
     title = ""
-    if year_match:
-        before_year = ref_text[:year_match.start()].strip().rstrip(",.(")
-        after_year = ref_text[year_match.end():].strip().lstrip(",.):")
+    authors = ""
 
-        # Authors are before the year
-        authors = before_year.strip()
-        if authors.startswith("["):
-            # Remove numeric label like [1]
-            authors = re.sub(r"^\[\d+\]\s*", "", authors)
-
-        # Title is usually the first quoted or italic segment after year,
-        # or just the next sentence
-        title_parts = after_year.split(".", 1)
-        if title_parts:
-            title = title_parts[0].strip().strip('"').strip("'")
+    # Check for quoted title: "Title" or “Title”
+    quote_match = re.search(r'["“](.+?)["”]', cleaned_text)
+    if quote_match:
+        title = quote_match.group(1).strip()
+        # Authors are typically before the quote
+        authors_part = cleaned_text[:quote_match.start()].strip().rstrip(",.")
+        authors = authors_part
     else:
-        # No year found — use full text
-        title = ref_text[:100]
+        # Heuristic: split by commas / periods around year
+        if year_match:
+            before_year = cleaned_text[:year_match.start()].strip().rstrip(",.(")
+            after_year = cleaned_text[year_match.end():].strip().lstrip(",.):")
+
+            parts = [p.strip() for p in before_year.split(".") if p.strip()]
+            if len(parts) >= 2:
+                authors = parts[0]
+                title = ".".join(parts[1:]).strip()
+            elif after_year:
+                authors = before_year
+                title_parts = after_year.split(".", 1)
+                title = title_parts[0].strip().strip('"').strip("'")
+            else:
+                authors = before_year
+                title = before_year
+        else:
+            title = cleaned_text[:100]
+            authors = cleaned_text[:50]
 
     # Generate key
     first_word = re.sub(r"[^a-zA-Z]", "", authors.split(",")[0].split()[-1] if authors else "ref").lower()
