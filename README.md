@@ -95,7 +95,7 @@ or
 Format my thesis.docx for ACM SIGCONF, my figures are in the figs/ folder
 ```
 
-The agent reads `SKILL.md`, follows the 7-stage pipeline, and delivers a ready-to-submit package.
+> ⚠️ **Agent ignoring the skill?** Read the **[Setup Guide](SETUP.md)** to wire paper2tex into your agent (Claude Code, Cursor, Antigravity, OpenCode, etc.). Without setup, most agents will try to do the conversion themselves — badly.
 
 #### Manual CLI
 
