@@ -2,9 +2,22 @@ import argparse
 import json
 import logging
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
+
+# Ensure UTF-8 output on Windows consoles
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 try:
     from scripts.preprocess import preprocess_docx
@@ -105,8 +118,8 @@ def extract(docx_path: Path, work_dir: Path, figures_dir: Optional[Path] = None)
     logger.info("Extracting math...")
     math_registry = None
     try:
-        math_registry_path = work_dir / "math_registry.json"
-        math_registry = extract_math(preprocessed_docx, math_registry_path)
+        math_reg_obj = extract_math(preprocessed_docx, work_dir)
+        math_registry = math_reg_obj.to_dict() if hasattr(math_reg_obj, "to_dict") else math_reg_obj
     except Exception as e:
         logger.error(f"Math extraction failed: {e}")
         all_warnings.append(f"Math extraction failed: {e}")
@@ -115,8 +128,8 @@ def extract(docx_path: Path, work_dir: Path, figures_dir: Optional[Path] = None)
     logger.info("Extracting tables...")
     table_registry = None
     try:
-        table_registry_path = work_dir / "table_registry.json"
-        table_registry = extract_tables(preprocessed_docx, table_registry_path)
+        table_reg_obj = extract_tables(preprocessed_docx, work_dir)
+        table_registry = table_reg_obj.to_dict() if hasattr(table_reg_obj, "to_dict") else table_reg_obj
     except Exception as e:
         logger.error(f"Table extraction failed: {e}")
         all_warnings.append(f"Table extraction failed: {e}")
@@ -125,8 +138,8 @@ def extract(docx_path: Path, work_dir: Path, figures_dir: Optional[Path] = None)
     logger.info("Extracting figures...")
     figure_registry = None
     try:
-        figure_registry_path = work_dir / "figures_registry.json"
-        figure_registry = extract_figures(preprocessed_docx, figures_dir, figure_registry_path)
+        fig_reg_obj = extract_figures(preprocessed_docx, work_dir, figures_dir=figures_dir)
+        figure_registry = fig_reg_obj.to_dict() if hasattr(fig_reg_obj, "to_dict") else fig_reg_obj
     except Exception as e:
         logger.error(f"Figure extraction failed: {e}")
         all_warnings.append(f"Figure extraction failed: {e}")
@@ -135,8 +148,8 @@ def extract(docx_path: Path, work_dir: Path, figures_dir: Optional[Path] = None)
     logger.info("Extracting bibliography...")
     bib_registry = None
     try:
-        bib_registry_path = work_dir / "bib_registry.json"
-        bib_registry = extract_bibliography(preprocessed_docx, bib_registry_path)
+        bib_reg_obj = extract_bibliography(preprocessed_docx, work_dir, citation_type=citation_type)
+        bib_registry = bib_reg_obj.to_dict() if hasattr(bib_reg_obj, "to_dict") else bib_reg_obj
     except Exception as e:
         logger.error(f"Bibliography extraction failed: {e}")
         all_warnings.append(f"Bibliography extraction failed: {e}")
@@ -155,7 +168,7 @@ def extract(docx_path: Path, work_dir: Path, figures_dir: Optional[Path] = None)
         try:
             text = content_md.read_text(encoding="utf-8")
             special_chars = detect_special_chars(text)
-            required_packages = get_required_packages(list(special_chars.keys()))
+            required_packages = sorted(list(get_required_packages(special_chars)))
         except Exception as e:
             logger.error(f"Special char detection failed: {e}")
             all_warnings.append(f"Special char detection failed: {e}")
@@ -176,10 +189,10 @@ def extract(docx_path: Path, work_dir: Path, figures_dir: Optional[Path] = None)
         "warnings": all_warnings,
         "required_packages": required_packages,
         "registries": {
-            "math": "math_registry.json" if math_registry else None,
-            "table": "table_registry.json" if table_registry else None,
-            "figures": "figures_registry.json" if figure_registry else None,
-            "bib": "bib_registry.json" if bib_registry else None
+            "math": "math_registry.json" if (work_dir / "math_registry.json").exists() else None,
+            "table": "table_registry.json" if (work_dir / "table_registry.json").exists() else None,
+            "figures": "figures_registry.json" if (work_dir / "figures_registry.json").exists() else None,
+            "bib": "bib_registry.json" if (work_dir / "bib_registry.json").exists() else None
         }
     }
 

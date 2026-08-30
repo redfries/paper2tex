@@ -1,11 +1,24 @@
 import argparse
 import logging
+import json
 import zipfile
 import sys
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 from lxml import etree
+
+# Ensure UTF-8 output on Windows consoles
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +47,26 @@ class TableRegistry:
     tables: List[TableEntry]
     total_count: int
     merged_count: int
+
+    def to_dict(self) -> dict:
+        return {
+            "total_count": self.total_count,
+            "merged_count": self.merged_count,
+            "tables": [
+                {
+                    "position": t.position,
+                    "caption": t.caption,
+                    "label": t.label,
+                    "is_wide": t.is_wide,
+                    "notes": t.notes,
+                    "num_rows": t.num_rows,
+                    "num_cols": t.num_cols,
+                    "has_merged_cells": t.has_merged_cells,
+                    "latex": t.latex,
+                }
+                for t in self.tables
+            ],
+        }
 
 def parse_w_text(element: etree._Element, nsmap: dict) -> str:
     """Extract text from an element, considering math placeholders if any."""
@@ -261,7 +294,19 @@ def extract_tables(docx_path: Path, work_dir: Path) -> TableRegistry:
             if has_merged:
                 merged_tables_count += 1
                 
-    return TableRegistry(tables=tables, total_count=len(tables), merged_count=merged_tables_count)
+    registry = TableRegistry(tables=tables, total_count=len(tables), merged_count=merged_tables_count)
+
+    if work_dir:
+        work_path = Path(work_dir)
+        if work_path.suffix == ".json":
+            out_file = work_path
+        else:
+            work_path.mkdir(parents=True, exist_ok=True)
+            out_file = work_path / "table_registry.json"
+        out_file.write_text(json.dumps(registry.to_dict(), indent=2), encoding="utf-8", newline="\n")
+        logger.info(f"Saved table registry to {out_file}")
+
+    return registry
 
 def main():
     parser = argparse.ArgumentParser(description="Extract tables from a .docx file and convert to LaTeX")

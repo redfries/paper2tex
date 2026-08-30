@@ -14,11 +14,25 @@ Pipeline:
 from __future__ import annotations
 
 import logging
+import json
 import re
 import shutil
+import sys
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# Ensure UTF-8 output on Windows consoles
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 try:
     from lxml import etree
@@ -549,6 +563,16 @@ def extract_figures(
         "Figure extraction complete: %d figures, %d subfigure groups, %d external matches",
         registry.total_count, registry.subfigure_groups, registry.external_matches,
     )
+
+    if work_dir:
+        work_path = Path(work_dir)
+        if work_path.suffix == ".json":
+            out_file = work_path
+        else:
+            work_path.mkdir(parents=True, exist_ok=True)
+            out_file = work_path / "figures_registry.json"
+        out_file.write_text(json.dumps(registry.to_dict(), indent=2), encoding="utf-8", newline="\n")
+        log.info(f"Saved figures registry to {out_file}")
 
     return registry
 

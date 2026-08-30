@@ -16,6 +16,18 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Ensure UTF-8 output on Windows consoles
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 log = logging.getLogger(__name__)
 
 
@@ -145,7 +157,9 @@ def run_preflight() -> PreflightResult:
 
     # --- Python packages ---
     result.tools.append(_check_python_package("lxml"))
-    result.tools.append(_check_python_package("docx", import_name="docx"))
+    docx_status = _check_python_package("docx", import_name="docx")
+    docx_status.install_hint = "pip install python-docx"
+    result.tools.append(docx_status)
     result.tools.append(_check_python_package("requests"))
 
     # --- OMML2MML.XSL ---

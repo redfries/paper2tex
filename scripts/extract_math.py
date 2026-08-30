@@ -1,4 +1,6 @@
 import os
+import sys
+import json
 import zipfile
 import logging
 import argparse
@@ -6,6 +8,18 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Optional
 from lxml import etree
+
+# Ensure UTF-8 output on Windows consoles
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +36,23 @@ class MathRegistry:
     equations: List[MathEquation] = field(default_factory=list)
     inline_count: int = 0
     display_count: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "inline_count": self.inline_count,
+            "display_count": self.display_count,
+            "total_count": self.inline_count + self.display_count,
+            "equations": [
+                {
+                    "position": eq.position,
+                    "latex": eq.latex,
+                    "is_display": eq.is_display,
+                    "eq_number": eq.eq_number,
+                    "original_omml": eq.original_omml,
+                }
+                for eq in self.equations
+            ],
+        }
 
 UNICODE_MATH_MAP = {
     '×': '\\times',
@@ -270,6 +301,16 @@ def extract_math(docx_path: Path, work_dir: Path) -> MathRegistry:
             )
             registry.equations.append(eq)
             registry.inline_count += 1
+
+    if work_dir:
+        work_path = Path(work_dir)
+        if work_path.suffix == ".json":
+            out_file = work_path
+        else:
+            work_path.mkdir(parents=True, exist_ok=True)
+            out_file = work_path / "math_registry.json"
+        out_file.write_text(json.dumps(registry.to_dict(), indent=2), encoding="utf-8", newline="\n")
+        logger.info(f"Saved math registry to {out_file}")
             
     return registry
 
