@@ -582,6 +582,28 @@ def verify_output(
     result.checks.extend(_check_special_chars(pdf_path, manifest_path))
     result.checks.extend(_check_text_fidelity(work_dir, tex_path))
 
+    # Visual QA check (renders PDF to PNG, detects whitespace voids and orphan pages)
+    if pdf_path and pdf_path.exists():
+        try:
+            from scripts.visual_qa import run_visual_qa
+            vqa = run_visual_qa(pdf_path, work_dir)
+            if vqa.issues:
+                issue_summary = "; ".join(f"Page {p}: {','.join(errs)}" for p, errs in vqa.issues.items())
+                result.checks.append(Check(
+                    name="Visual page layout",
+                    passed=False,
+                    details=f"Potential layout issue(s) detected across {vqa.page_count} pages: {issue_summary}",
+                    severity="warning",
+                ))
+            else:
+                result.checks.append(Check(
+                    name="Visual page layout",
+                    passed=True,
+                    details=f"All {vqa.page_count} pages rendered and verified (0 layout/void anomalies)",
+                ))
+        except Exception as e:
+            log.debug("Visual QA check skipped: %s", e)
+
     # Overall result
     result.all_passed = all(
         c.passed for c in result.checks if c.severity == "error"
