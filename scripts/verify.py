@@ -35,6 +35,14 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
 
 log = logging.getLogger(__name__)
 
+try:
+    from scripts.verify_text_fidelity import verify_text_fidelity
+except ImportError:
+    try:
+        from .verify_text_fidelity import verify_text_fidelity
+    except ImportError:
+        from verify_text_fidelity import verify_text_fidelity
+
 
 @dataclass
 class Check:
@@ -448,6 +456,92 @@ def _check_special_chars(pdf_path: Path, manifest_path: Path) -> list[Check]:
     return checks
 
 
+def _check_text_fidelity(work_dir: Path, tex_path: Path) -> list[Check]:
+    """Verify bidirectional text fidelity, dropped paragraphs, rewrites, hallucinations, and captions."""
+    checks: list[Check] = []
+    md_path = work_dir / "content.md"
+    fig_reg_path = work_dir / "figures_registry.json"
+    table_reg_path = work_dir / "table_registry.json"
+
+    if not md_path.exists():
+        checks.append(Check(
+            name="Text fidelity",
+            passed=True,
+            details="No content.md found — skipping text fidelity verification",
+            severity="info",
+        ))
+        return checks
+
+    fidelity = verify_text_fidelity(md_path, tex_path, fig_reg_path, table_reg_path)
+
+    # 1. Dropped paragraphs
+    if fidelity.dropped_paras:
+        checks.append(Check(
+            name="Dropped text / paragraphs",
+            passed=False,
+            details=f"{len(fidelity.dropped_paras)} paragraph(s) dropped from source document:\n" +
+                    "\n".join([f"- Para #{d.source_index + 1}: {d.source_preview}" for d in fidelity.dropped_paras[:3]]),
+            severity="error",
+        ))
+    else:
+        checks.append(Check(
+            name="No dropped paragraphs",
+            passed=True,
+            details=f"All {fidelity.total_source_paras} source paragraphs preserved verbatim",
+        ))
+
+    # 2. Rewritten paragraphs
+    if fidelity.rewritten_paras:
+        checks.append(Check(
+            name="Prose verbatim fidelity",
+            passed=False,
+            details=f"{len(fidelity.rewritten_paras)} paragraph(s) were paraphrased / rewritten:\n" +
+                    "\n".join([f"- Para #{r.source_index + 1} ({r.similarity*100:.0f}% sim): {r.source_preview[:60]}" for r in fidelity.rewritten_paras[:3]]),
+            severity="warning",
+        ))
+    else:
+        checks.append(Check(
+            name="Prose verbatim fidelity",
+            passed=True,
+            details="Zero paraphrasing detected (100% verbatim text)",
+        ))
+
+    # 3. Hallucinated text
+    if fidelity.hallucinated_paras:
+        checks.append(Check(
+            name="No hallucinated additions",
+            passed=False,
+            details=f"{len(fidelity.hallucinated_paras)} extraneous paragraph(s) found in output that were not in source:\n" +
+                    "\n".join([f"- TeX Para #{h.target_index}: {h.target_preview}" for h in fidelity.hallucinated_paras[:3]]),
+            severity="error",
+        ))
+    else:
+        checks.append(Check(
+            name="No hallucinated additions",
+            passed=True,
+            details="Zero invented / hallucinated text in LaTeX output",
+        ))
+
+    # 4. Captions
+    failed_captions = [c for c in fidelity.caption_checks if not c.passed]
+    if failed_captions:
+        checks.append(Check(
+            name="Caption fidelity",
+            passed=False,
+            details=f"{len(failed_captions)} caption mismatch(es):\n" +
+                    "\n".join([f"- {c.element_id}: expected '{c.expected_caption}'" for c in failed_captions]),
+            severity="error",
+        ))
+    elif fidelity.caption_checks:
+        checks.append(Check(
+            name="Caption fidelity",
+            passed=True,
+            details=f"All {len(fidelity.caption_checks)} figure/table captions match registries verbatim",
+        ))
+
+    return checks
+
+
 def verify_output(
     tex_path: Path,
     pdf_path: Path | None = None,
@@ -486,6 +580,7 @@ def verify_output(
     result.checks.extend(_check_crossref_integrity(tex_path))
     result.checks.extend(_check_citation_integrity(tex_path, bib_path))
     result.checks.extend(_check_special_chars(pdf_path, manifest_path))
+    result.checks.extend(_check_text_fidelity(work_dir, tex_path))
 
     # Overall result
     result.all_passed = all(

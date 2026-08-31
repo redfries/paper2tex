@@ -205,15 +205,20 @@ def extract(docx_path: Path, work_dir: Path, figures_dir: Optional[Path] = None)
             all_warnings.append(f"Special char detection failed: {e}")
     else:
         logger.warning("No markdown content available for special char detection.")
-        all_warnings.append("No markdown content available for special char detection.")
-
     # 9. Build Manifest
+    if counts is None:
+        counts = {}
+    if figure_registry:
+        counts["figures"] = figure_registry.get("total_count", len(figure_registry.get("figures", [])))
+    if table_registry:
+        counts["tables"] = table_registry.get("total_count", len(table_registry.get("tables", [])))
+    if math_registry:
+        counts["equations"] = math_registry.get("total_count", len(math_registry.get("equations", [])))
+    if bib_registry:
+        counts["references"] = bib_registry.get("entry_count", len(bib_registry.get("entries", [])))
+
     manifest = {
-        "counts": counts if counts else {
-            "sections": 0, "figures": 0, "tables": 0,
-            "display_equations": 0, "inline_equations": 0,
-            "footnotes": 0, "references": 0
-        },
+        "counts": counts,
         "special_chars": special_chars,
         "cross_ref_map": cross_ref_map,
         "citation_type": citation_type,

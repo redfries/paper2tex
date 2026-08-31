@@ -41,14 +41,13 @@ Recommended: `pdftotext` (for character verification), `OMML2MML.XSL` (for optim
 ## Pipeline Overview
 
 ```
-STAGE 0: PREFLIGHT → check tools
+STAGE 0: PREFLIGHT → check tools (pandoc, tectonic/latexmk, lxml)
 STAGE 1: PRE-PROCESS → fix Symbol font trap, extract field codes, cross-ref map
 STAGE 2: EXTRACT → parallel pipelines for text, math, tables, figures, bibliography
-STAGE 3: ASSEMBLE → LLM maps content into template (YOU do this step)
-STAGE 4: PRE-COMPILE LINT → catch unescaped chars, path issues
-STAGE 5: COMPILE-FIX → tectonic/latexmk loop with error classifier
-STAGE 6: VERIFY → QA gate (blocks delivery if checks fail)
-STAGE 7: DELIVER → submission/ folder with everything
+STAGE 3: ASSEMBLE → Deterministic AST Assembler (scripts/assemble.py)
+STAGE 4: COMPILE-FIX → tectonic/latexmk loop with error classifier
+STAGE 5: VERIFY → QA Gate + Bidirectional Text Fidelity & Hallucination Checker
+STAGE 6: DELIVER → submission/ folder with verified main.tex, .bib, figures, .pdf
 ```
 
 ## Step-by-Step Workflow
@@ -59,7 +58,7 @@ Ask the user for:
 1. **The `.docx` file** — the paper to convert
 2. **The conference template** — one of:
    - A template zip file (e.g., `IEEEtran.zip`)
-   - A conference name (e.g., "IEEE conference", "ACM SIGCONF", "NeurIPS 2026")
+   - A conference name (e.g., "IEEE journal/conference", "ACM SIGCONF", "NeurIPS 2026")
    - A sample `.tex` file from the conference
 3. **External figures directory** (optional) — if figures are in a separate folder
 
@@ -91,13 +90,13 @@ from scripts.extract_bib import extract_bibliography
 # Math: OMML → MathML → LaTeX (deterministic, never use LLM for math)
 math_reg = extract_math(docx_path, work_dir)
 
-# Tables: direct XML parsing with merged cell reconstruction
+# Tables: direct XML parsing, 2-column wide table* auto-fit, cmidrule generation
 table_reg = extract_tables(docx_path, work_dir)
 
-# Figures: embedded + external folder reconciliation
+# Figures: DrawingML extents, aspect ratio/orientation, subfigure grouping, external reconciliation
 fig_reg = extract_figures(docx_path, work_dir, figures_dir=user_figures_dir)
 
-# Bibliography: citation manager extraction OR AnyStyle parsing + Crossref verification
+# Bibliography: XML relationship target URL extraction, IEEE [Online]. Available: clean formatting, Crossref
 bib_reg = extract_bibliography(docx_path, work_dir,
     citation_type=result.citation_type,
     verify_crossref=True)
@@ -109,43 +108,20 @@ pandoc paper.docx -f docx -t markdown -o work/content.md
 pandoc paper.docx -f docx -t latex -o work/content.tex
 ```
 
-### Step 4: Assemble the LaTeX (YOUR JOB — The LLM Step)
+### Step 4: Deterministic AST Assembly (`scripts/assemble.py`)
 
-> [!CAUTION]
-> This is the ONLY step where you (the LLM) generate content.
-> Follow these rules EXACTLY. Violations corrupt the student's paper.
+Run the deterministic AST Assembler to build `main.tex`:
+```powershell
+python scripts/assemble.py work_dir/
+```
 
-#### HARD RULES — NEVER VIOLATE
-
-1. **Text is VERBATIM** from `content.md`. Zero rewording. No "improvements". No added or removed sentences. Copy-paste the student's prose exactly.
-
-2. **Math is COPIED** from `math_registry.json`. Never rewrite, "simplify", or convert math. The OMML pipeline already produced correct LaTeX. Just place it.
-
-3. **Tables are COPIED** from `table_registry.json`. The table extractor already generated correct `\begin{tabular}` code with proper `\multicolumn`/`\multirow`. Don't restructure.
-
-4. **Figures use** `figures_registry.json` paths and captions. Captions are verbatim. Use `\includegraphics[width=\columnwidth]{figures/figN.ext}`.
-
-5. **Cross-references** come from `cross_ref_map.json`. Use `\cref{}` (requires `cleveref` package). Never hardcode "Figure 3" — always `\cref{fig:label}`.
-
-6. **Citations** come from `cite_map.json` or `bib_registry.json`. Use `\cite{key}`. Never invent citation keys.
-
-7. **All `\label{}` and `\cite{}` keys** must come from the registries. Never invent new keys.
-
-8. **Per-section chunking** for documents longer than ~8 pages. Process one section at a time. Share the registry across chunks.
-
-9. **Ambiguous elements** → insert a `% TODO(paper2tex): describe the issue` comment. Never guess silently.
-
-10. **No content changes** — EVER. Not even fixing typos, improving grammar, or reorganizing sentences. The student's text is sacred.
-
-#### WHAT YOU ACTUALLY DO (your real value)
-
-- Map author/affiliation metadata → template-specific `\author{}` block
-- Arrange sections into template document structure
-- Insert `\begin{abstract}...\end{abstract}`, `\begin{IEEEkeywords}...\end{IEEEkeywords}`, etc.
-- Decide figure/table float placement (`[htbp]`, `[t]`, `[!h]`)
-- Convert detected algorithm/pseudocode → `\begin{algorithmic}` environment
-- Insert appropriate `\usepackage{}` based on detected content
-- Handle template-specific formatting (ACM CCS, IEEE keywords, etc.)
+#### Core Architectural Guarantees:
+1. **100% Verbatim Prose Preservation**: Maps markdown AST blocks directly into LaTeX. Zero dropped paragraphs, zero paraphrasing, zero hallucinated additions.
+2. **Exact Figure & Section Anchoring**: Automatically inserts `\usepackage{placeins}` and `\FloatBarrier` before every `\section{}` and `\subsection{}` to prevent figures from drifting into subsequent sections.
+3. **Subfigure & Standalone Figure Layout**: Multi-panel subfigures (e.g. Figure 1 panels a, b, c) are rendered in a 2-column `\begin{figure*}` block with `\hfill` and `width=0.31\textwidth`, while standalone landscape charts are properly centered and scaled.
+4. **2-Column Wide Table Auto-Fit**: 4+ column tables automatically render in `\begin{table*}` with full-width `tabular*` and `\cmidrule(lr){...}` grouped subheaders.
+5. **Interactive Clickable Hyperlinks**: In-text citations (`[1]`, `[2]`, `[3]`) and bibliography entries are hyperlinked with `\usepackage{hyperref}`.
+6. **No content changes** — EVER. The student's text is preserved 100% verbatim.
 
 #### TEMPLATE STRUCTURE
 

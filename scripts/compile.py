@@ -363,6 +363,11 @@ def _apply_fixes(
                         new_lines.append(line)
                 content = "\n".join(new_lines)
 
+        elif error.category in (ErrorCategory.CITATION_UNDEFINED, ErrorCategory.REFERENCE_UNDEFINED):
+            # These are resolved by multi-pass compilation
+            error.fix_applied = True
+            fixed.append(error)
+
         elif error.category == ErrorCategory.DIMENSION_TOO_LARGE:
             # Add width constraint to \includegraphics without one
             content = re.sub(

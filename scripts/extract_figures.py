@@ -76,6 +76,11 @@ class FigureEntry:
     subfigure_group: str | None = None
     quality: str = "embedded"     # "vector", "external_raster", "embedded"
     width_hint: str = "\\columnwidth"  # Default width for \includegraphics
+    aspect_ratio: float = 1.0
+    orientation: str = "landscape"     # "landscape", "portrait", "square"
+    cx_emu: int = 0
+    cy_emu: int = 0
+    figure_number: int | None = None
 
 
 @dataclass
@@ -103,6 +108,10 @@ class FigureRegistry:
                     "doc_position": f.doc_position,
                     "is_subfigure": f.is_subfigure,
                     "subfigure_group": f.subfigure_group,
+                    "aspect_ratio": round(f.aspect_ratio, 3),
+                    "orientation": f.orientation,
+                    "width_hint": f.width_hint,
+                    "figure_number": f.figure_number,
                 }
                 for f in self.figures
             ],
@@ -196,12 +205,29 @@ def _parse_drawings(doc_xml: etree._Element, rId_map: dict[str, str]) -> list[di
             if doc_pr is not None:
                 alt_text = doc_pr.get("descr", "") or doc_pr.get("name", "")
 
+            # Get extent (dimensions in EMUs)
+            extent = container.find("wp:extent", namespaces=NS)
+            cx_emu = 0
+            cy_emu = 0
+            if extent is not None:
+                try:
+                    cx_emu = int(extent.get("cx", 0))
+                    cy_emu = int(extent.get("cy", 0))
+                except Exception:
+                    pass
+            aspect_ratio = (cx_emu / cy_emu) if cy_emu > 0 else 1.0
+            orientation = "landscape" if aspect_ratio > 1.25 else ("portrait" if aspect_ratio < 0.8 else "square")
+
             drawings.append({
                 "rId": r_embed,
                 "filename": filename,
                 "paragraph_index": para_idx,
                 "is_inline": inline is not None,
                 "alt_text": alt_text,
+                "cx_emu": cx_emu,
+                "cy_emu": cy_emu,
+                "aspect_ratio": aspect_ratio,
+                "orientation": orientation,
             })
 
     log.info("Found %d drawings in document", len(drawings))
@@ -387,6 +413,10 @@ def _reconcile_figures(
             label=label,
             doc_position=draw["paragraph_index"],
             quality=quality,
+            aspect_ratio=draw.get("aspect_ratio", 1.0),
+            orientation=draw.get("orientation", "landscape"),
+            cx_emu=draw.get("cx_emu", 0),
+            cy_emu=draw.get("cy_emu", 0),
         ))
 
     return entries
@@ -438,50 +468,88 @@ def _convert_svg_to_pdf(svg_path: Path, pdf_path: Path) -> bool:
     return False
 
 
+def _extract_fig_num(caption: str) -> int | None:
+    if not caption:
+        return None
+    m = re.search(r"(?:Figure|Fig\.?)\s*(\d+)", caption, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    return None
+
+
 def _detect_subfigure_groups(
     figures: list[FigureEntry],
     doc_xml: etree._Element,
 ) -> list[FigureEntry]:
     """Detect groups of figures that should be subfigures.
 
-    Heuristic: consecutive figures (within 2 paragraph positions) sharing
-    a single caption with (a), (b), (c) markers.
+    Criteria:
+    1. Figures must be in close proximity (<= 3 paragraph positions apart).
+    2. Figures must either:
+       a) Share the EXACT same figure number in their caption (e.g. both Fig 1) AND have subfig markers (a), (b), (c)
+       b) OR have the exact same non-empty caption text.
+    Distinct figure numbers (e.g., Fig 3 vs Fig 4) are STRICTLY FORBIDDEN from being grouped.
     """
     if len(figures) < 2:
         return figures
 
+    for f in figures:
+        f.figure_number = _extract_fig_num(f.caption)
+
     i = 0
     group_id = 0
     while i < len(figures):
-        # Look ahead for consecutive figures
         group = [i]
         j = i + 1
         while j < len(figures):
-            pos_diff = figures[j].doc_position - figures[j - 1].doc_position
-            if pos_diff <= 3:  # Close together
+            f_i = figures[i]
+            f_j = figures[j]
+            pos_close = (figures[j].doc_position - figures[j - 1].doc_position) <= 3
+
+            same_fig_num = (
+                f_i.figure_number is not None and
+                f_j.figure_number is not None and
+                f_i.figure_number == f_j.figure_number
+            )
+            same_caption = (
+                bool(f_i.caption) and
+                f_i.caption.strip() == f_j.caption.strip()
+            )
+            has_subfig_marker = bool(
+                re.search(r"\([a-d]\)", f_i.caption) or
+                re.search(r"\([a-d]\)", f_j.caption)
+            )
+
+            # Never group if they have different explicit figure numbers!
+            diff_fig_num = (
+                f_i.figure_number is not None and
+                f_j.figure_number is not None and
+                f_i.figure_number != f_j.figure_number
+            )
+
+            if pos_close and not diff_fig_num and (same_fig_num or same_caption or (has_subfig_marker and f_j.figure_number is None)):
                 group.append(j)
                 j += 1
             else:
                 break
 
         if len(group) >= 2:
-            # Check if any caption contains (a), (b) markers
-            has_subfig_markers = False
-            for idx in group:
-                if re.search(r"\([a-d]\)", figures[idx].caption):
-                    has_subfig_markers = True
-                    break
+            group_id += 1
+            group_name = f"subfig_group_{group_id}"
+            n = len(group)
+            if n == 2:
+                w = "0.48\\textwidth"
+            elif n == 3:
+                w = "0.31\\textwidth"
+            elif n == 4:
+                w = "0.48\\textwidth"
+            else:
+                w = f"{1.0 / n:.2f}\\textwidth"
 
-            # Also check: single shared caption for the group
-            if has_subfig_markers or len(group) >= 2:
-                group_id += 1
-                group_name = f"subfig_group_{group_id}"
-                for idx in group:
-                    figures[idx].is_subfigure = True
-                    figures[idx].subfigure_group = group_name
-                    figures[idx].width_hint = (
-                        f"{1.0 / len(group):.2f}\\columnwidth"
-                    )
+            for idx in group:
+                figures[idx].is_subfigure = True
+                figures[idx].subfigure_group = group_name
+                figures[idx].width_hint = w
 
         i = j if j > i + 1 else i + 1
 

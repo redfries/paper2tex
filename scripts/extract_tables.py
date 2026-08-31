@@ -2,6 +2,7 @@ import argparse
 import logging
 import json
 import zipfile
+import re
 import sys
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -76,6 +77,19 @@ def parse_w_text(element: etree._Element, nsmap: dict) -> str:
             texts.append(t.text)
     return "".join(texts).strip()
 
+
+def _escape_latex_cell(raw: str) -> str:
+    if not raw:
+        return ""
+    t = raw.replace("\u00a0", " ")
+    t = re.sub(r"(?<!\\)&", r"\&", t)
+    t = re.sub(r"(?<!\\)%", r"\%", t)
+    t = re.sub(r"(?<!\\)#", r"\#", t)
+    t = re.sub(r"(?<!\\)_", r"\_", t)
+    t = re.sub(r"(?<!\\)\$", r"\$", t)
+    return t.strip()
+
+
 def extract_tables(docx_path: Path, work_dir: Path) -> TableRegistry:
     """Extract all tables from a .docx and generate LaTeX.
     
@@ -107,6 +121,12 @@ def extract_tables(docx_path: Path, work_dir: Path) -> TableRegistry:
     
     for i, elem in enumerate(elements):
         if elem.tag == f"{{{nsmap['w']}}}tbl":
+            # Skip empty placeholder tables with no text in any cell
+            cells = elem.xpath('.//w:tc', namespaces=nsmap)
+            all_text = "".join(parse_w_text(c, nsmap) for c in cells).strip()
+            if not all_text:
+                continue
+
             table_index += 1
             
             caption = ""
@@ -196,54 +216,29 @@ def extract_tables(docx_path: Path, work_dir: Path) -> TableRegistry:
                         
                     c_idx += colspan
                     
-            is_wide = num_cols > 5
+            is_wide = num_cols >= 4
             
             latex_lines = []
             env = "table*" if is_wide else "table"
             latex_lines.append(f"\\begin{{{env}}}[htbp]")
             latex_lines.append(f"\\centering")
             if caption:
-                # Escape caption
-                latex_lines.append(f"\\caption{{{caption.replace('&', '\\\\&').replace('%', '\\\\%')}}}")
+                clean_cap = _escape_latex_cell(caption)
+                latex_lines.append(f"\\caption{{{clean_cap}}}")
                 latex_lines.append(f"\\label{{{label}}}")
                 
-            cols_format = "l" * num_cols
-            latex_lines.append(f"\\begin{{tabular}}{{{cols_format}}}")
+            if is_wide:
+                cols_format = "l" + "c" * (num_cols - 1)
+                latex_lines.append(f"\\begin{{tabular*}}{{\\textwidth}}{{@{{\\extracolsep{{\\fill}}}}{cols_format}}}")
+            else:
+                cols_format = "l" * num_cols
+                latex_lines.append(f"\\begin{{tabular}}{{{cols_format}}}")
             latex_lines.append(f"\\toprule")
             
             for r_idx in range(num_rows):
-                row_tex = []
-                c_idx = 0
-                while c_idx < num_cols:
-                    if c_idx not in cell_matrix[r_idx]:
-                        c_idx += 1
-                        continue
-                        
-                    cell = cell_matrix[r_idx][c_idx]
-                    
-                    if cell.rowspan == 0 or cell.colspan == 0:
-                        c_idx += 1
-                        continue
-                        
-                    text = cell.content.replace("&", "\\&").replace("%", "\\%")
-                    
-                    if "$" not in text and any(c in text for c in "=_+^<>"):
-                        # basic math detection if markers were omitted, could wrap in $...$
-                        pass
-                    
-                    if cell.colspan > 1 and cell.rowspan > 1:
-                        text = f"\\multicolumn{{{cell.colspan}}}{{{cell.alignment}}}{{\\multirow{{{cell.rowspan}}}{{*}}{{{text}}}}}"
-                    elif cell.colspan > 1:
-                        text = f"\\multicolumn{{{cell.colspan}}}{{{cell.alignment}}}{{{text}}}"
-                    elif cell.rowspan > 1:
-                        text = f"\\multirow{{{cell.rowspan}}}{{*}}{{{text}}}"
-                        
-                    row_tex.append(text)
-                    c_idx += cell.colspan
-                    
-                # In LaTeX, for rows where a multirow from above passes through, we need an empty cell &
                 rendered_row_tex = []
                 c_idx = 0
+                cmidrules = []
                 while c_idx < num_cols:
                     cell = cell_matrix[r_idx].get(c_idx)
                     if cell is None:
@@ -256,27 +251,38 @@ def extract_tables(docx_path: Path, work_dir: Path) -> TableRegistry:
                     elif cell.colspan == 0:
                         c_idx += 1
                     else:
-                        text = cell.content.replace("&", "\\&").replace("%", "\\%")
+                        text = _escape_latex_cell(cell.content)
+                        if cell.is_header or r_idx < 2:
+                            # Bold headers if not empty
+                            if text and not text.startswith("\\textbf{"):
+                                text = f"\\textbf{{{text}}}"
                         if cell.colspan > 1 and cell.rowspan > 1:
-                            text = f"\\multicolumn{{{cell.colspan}}}{{{cell.alignment}}}{{\\multirow{{{cell.rowspan}}}{{*}}{{{text}}}}}"
+                            text = f"\\multicolumn{{{cell.colspan}}}{{c}}{{\\multirow{{{cell.rowspan}}}{{*}}{{{text}}}}}"
+                            cmidrules.append(f"\\cmidrule(lr){{{c_idx + 1}-{c_idx + cell.colspan}}}")
                         elif cell.colspan > 1:
-                            text = f"\\multicolumn{{{cell.colspan}}}{{{cell.alignment}}}{{{text}}}"
+                            text = f"\\multicolumn{{{cell.colspan}}}{{c}}{{{text}}}"
+                            cmidrules.append(f"\\cmidrule(lr){{{c_idx + 1}-{c_idx + cell.colspan}}}")
                         elif cell.rowspan > 1:
                             text = f"\\multirow{{{cell.rowspan}}}{{*}}{{{text}}}"
                         rendered_row_tex.append(text)
                         c_idx += cell.colspan
                         
                 latex_lines.append(" & ".join(rendered_row_tex) + " \\\\")
-                if r_idx == 0:
+                if r_idx == 0 and cmidrules:
+                    latex_lines.append(" ".join(cmidrules))
+                elif r_idx == 1 or (r_idx == 0 and not cmidrules):
                     latex_lines.append("\\midrule")
                     
             latex_lines.append("\\bottomrule")
-            latex_lines.append("\\end{tabular}")
+            if is_wide:
+                latex_lines.append("\\end{tabular*}")
+            else:
+                latex_lines.append("\\end{tabular}")
             if notes:
                 latex_lines.append("\\vspace{1ex}")
                 latex_lines.append("\\raggedright")
                 for note in notes:
-                    latex_lines.append(f"\\small {note.replace('&', '\\\\&').replace('%', '\\\\%')} \\par")
+                    latex_lines.append(f"\\small {_escape_latex_cell(note)} \\par")
             latex_lines.append(f"\\end{{{env}}}")
             
             table_entry = TableEntry(

@@ -1,3 +1,4 @@
+import re
 import sys
 import logging
 import zipfile
@@ -139,6 +140,48 @@ def detect_citation_manager(tree: etree._Element) -> str:
                 return 'mendeley'
     return 'none'
 
+def count_headings(tree: etree._Element) -> int:
+    """Counts headings via Word styles, numbering patterns, and bold/underlined standalone lines."""
+    headings = 0
+    section_patterns = [
+        re.compile(r'^(?:\d+(?:\.\d+)*|[A-Z]\.|\b(?:[IVXLCDM]+)\.|\b(?:Section|Chapter)\s+\d+)\s+([A-Z].*)', re.IGNORECASE),
+        re.compile(r'^(?:Abstract|Introduction|Conclusion|References|Related\s+Work|Methodology|Results|Discussion|Case\s+Studies|Overview|Background)\b', re.IGNORECASE),
+    ]
+
+    for p in tree.findall('.//w:p', namespaces=NAMESPACES):
+        # 1. Check style
+        pStyle = p.find('.//w:pPr/w:pStyle', namespaces=NAMESPACES)
+        if pStyle is not None:
+            val = pStyle.get(f"{{{NAMESPACES['w']}}}val", "")
+            if val and (val.lower().startswith('heading') or val.lower() == 'title'):
+                headings += 1
+                continue
+
+        # Extract text
+        texts = [t.text for t in p.findall('.//w:t', namespaces=NAMESPACES) if t.text]
+        text = "".join(texts).strip()
+        if not text or len(text) > 150:
+            continue
+
+        # Check if runs are bold or underline
+        runs = p.findall('.//w:r', namespaces=NAMESPACES)
+        if runs:
+            all_bold = all(
+                (r.find('.//w:rPr/w:b', namespaces=NAMESPACES) is not None or
+                 r.find('.//w:rPr/w:u', namespaces=NAMESPACES) is not None)
+                for r in runs if "".join(t.text for t in r.findall('.//w:t', namespaces=NAMESPACES) if t.text).strip()
+            )
+            if all_bold and any(pat.match(text) for pat in section_patterns):
+                headings += 1
+                continue
+
+        # Check pattern match directly for numbered headings
+        if any(pat.match(text) for pat in section_patterns):
+            headings += 1
+
+    return headings
+
+
 def process_document(xml_bytes: bytes) -> Tuple[bytes, PreprocessResult]:
     """Processes document.xml, applying all rules, and returns modified XML and results."""
     tree = etree.fromstring(xml_bytes)
@@ -170,14 +213,7 @@ def process_document(xml_bytes: bytes) -> Tuple[bytes, PreprocessResult]:
         result.warnings.append(f"Found {ole_count} OLE objects, which could be legacy MathType equations.")
 
     # 8. Content Counting
-    headings = 0
-    for pPr in tree.findall('.//w:pPr', namespaces=NAMESPACES):
-        pStyle = pPr.find('.//w:pStyle', namespaces=NAMESPACES)
-        if pStyle is not None:
-            val = pStyle.get(f"{{{NAMESPACES['w']}}}val")
-            if val and val.lower().startswith('heading'):
-                headings += 1
-    
+    headings = count_headings(tree)
     figures = len(tree.findall('.//wp:inline', namespaces=NAMESPACES)) + len(tree.findall('.//wp:anchor', namespaces=NAMESPACES))
     tables = len(tree.findall('.//w:tbl', namespaces=NAMESPACES))
     equations = len(tree.findall('.//m:oMathPara', namespaces=NAMESPACES)) + len(tree.findall('.//m:oMath', namespaces=NAMESPACES))
