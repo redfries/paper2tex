@@ -340,39 +340,89 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
         if in_references:
             continue
 
-        # 5. Check for Section / Subsection headings
+        # 5. Check for Section / Subsection / Subsubsection / Appendix headings
         is_heading = False
-        for pat in section_patterns:
-            m = pat.match(joined_block)
-            if m:
-                sec_num = m.group(1) or ""
-                sec_title = m.group(2).strip()
-                if re.match(r"^(?:Fig|Figure|Table|Tab)\b", sec_title, re.IGNORECASE) or len(sec_title) > 120:
-                    break
-
-                clean_heading = sec_title.rstrip(":")
-                is_sub = False
-                if sec_num:
-                    parts = sec_num.split(".")
-                    if len(parts) >= 2 and parts[1] != "0":
-                        is_sub = True
-                elif clean_heading.lower().startswith("case"):
-                    is_sub = True
-
-                clean_heading = sanitize_prose(clean_heading, cite_map, cross_ref_map)
+        
+        # Check Markdown hash level first
+        hash_match = re.match(r"^(#{1,4})\s+(?:(\d+(?:\.\d+)*)\s+)?(.*)$", joined_block)
+        if hash_match:
+            h_level = len(hash_match.group(1))
+            sec_num = hash_match.group(2) or ""
+            sec_title = hash_match.group(3).strip()
+            
+            if not re.match(r"^(?:Fig|Figure|Table|Tab)\b", sec_title, re.IGNORECASE) and len(sec_title) <= 140:
+                clean_heading = sanitize_prose(sec_title.rstrip(":"), cite_map, cross_ref_map)
+                
+                # Determine section type by hash level
+                if h_level == 1:
+                    stype = "section"
+                elif h_level == 2:
+                    stype = "subsection"
+                elif h_level == 3:
+                    stype = "subsubsection"
+                else:
+                    stype = "paragraph_heading"
+                    
+                # Check for Appendix
+                if re.match(r"^appendix\b", clean_heading, re.IGNORECASE):
+                    stype = "appendix_section"
+                elif any(clean_heading.lower().startswith(k) for k in ["acknowledgment", "funding", "declaration", "ethics", "author contribution", "conflict of interest"]):
+                    stype = "unnumbered_section"
 
                 if current_section["elements"] or current_section["type"] != "preamble":
                     sections.append(current_section)
 
                 current_section = {
-                    "type": "subsection" if is_sub else "section",
+                    "type": stype,
                     "title": clean_heading,
                     "elements": [],
                 }
                 is_heading = True
                 in_abstract = False
                 in_keywords = False
-                break
+
+        if not is_heading:
+            for pat in section_patterns:
+                m = pat.match(joined_block)
+                if m:
+                    sec_num = m.group(1) or ""
+                    sec_title = m.group(2).strip()
+                    if re.match(r"^(?:Fig|Figure|Table|Tab)\b", sec_title, re.IGNORECASE) or len(sec_title) > 140:
+                        break
+
+                    clean_heading = sec_title.rstrip(":")
+                    stype = "section"
+                    
+                    if sec_num:
+                        parts = sec_num.split(".")
+                        if len(parts) == 2 and parts[1] != "0":
+                            stype = "subsection"
+                        elif len(parts) >= 3:
+                            stype = "subsubsection"
+                    elif clean_heading.lower().startswith("case ") or re.match(r"^[A-Z]\.\s+", clean_heading):
+                        stype = "subsection"
+                    elif re.match(r"^\d+\)\s+", clean_heading) or re.match(r"^[a-z]\)\s+", clean_heading):
+                        stype = "subsubsection"
+                    
+                    clean_heading = sanitize_prose(clean_heading, cite_map, cross_ref_map)
+                    
+                    if re.match(r"^appendix\b", clean_heading, re.IGNORECASE):
+                        stype = "appendix_section"
+                    elif any(clean_heading.lower().startswith(k) for k in ["acknowledgment", "funding", "declaration", "ethics", "author contribution", "conflict of interest"]):
+                        stype = "unnumbered_section"
+
+                    if current_section["elements"] or current_section["type"] != "preamble":
+                        sections.append(current_section)
+
+                    current_section = {
+                        "type": stype,
+                        "title": clean_heading,
+                        "elements": [],
+                    }
+                    is_heading = True
+                    in_abstract = False
+                    in_keywords = False
+                    break
 
         if is_heading:
             continue
@@ -559,11 +609,24 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
         if not elements and sec_type == "preamble":
             continue
 
-        if sec_type == "section" and sec_title and sec_title != "Preamble":
+        if sec_type == "appendix_section":
+            doc_lines.append("\\appendix")
+            doc_lines.append(f"\\section{{{sec_title}}}")
+            doc_lines.append("")
+        elif sec_type == "unnumbered_section" and sec_title:
+            doc_lines.append(f"\\section*{{{sec_title}}}")
+            doc_lines.append("")
+        elif sec_type == "section" and sec_title and sec_title != "Preamble":
             doc_lines.append(f"\\section{{{sec_title}}}")
             doc_lines.append("")
         elif sec_type == "subsection" and sec_title:
             doc_lines.append(f"\\subsection{{{sec_title}}}")
+            doc_lines.append("")
+        elif sec_type == "subsubsection" and sec_title:
+            doc_lines.append(f"\\subsubsection{{{sec_title}}}")
+            doc_lines.append("")
+        elif sec_type == "paragraph_heading" and sec_title:
+            doc_lines.append(f"\\paragraph{{{sec_title}}}")
             doc_lines.append("")
 
         for elem in elements:
