@@ -30,3 +30,5 @@ You are a FORMATTER, not a WRITER. The student's text is sacred.
     - Every equation number has a label
     - Every cross-reference uses `\cref{}`, not hardcoded text
     - Every citation uses `\cite{}` with a registry key
+
+11. **SEAMLESS FLOAT FLOW & SINGLE-COLUMN FIRST.** Never insert `\FloatBarrier` before sections or subsections. Let floats place naturally with `[!t]`. Default all figures and tables to single column (`\columnwidth`). Multi-panel subfigures should pack side-by-side in one column (`width=0.31\linewidth` for 3 panels) unless genuinely ultra-wide (>2.2:1 aspect ratio).

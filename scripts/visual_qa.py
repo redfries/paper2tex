@@ -150,9 +150,9 @@ def _basic_image_checks(png_path: Path) -> list[str]:
 
         # Check if page is mostly blank (potential missing content)
         grayscale = img.convert("L")
-        pixels = list(grayscale.getdata())
-        total = len(pixels)
-        white_pixels = sum(1 for p in pixels if p > 250)
+        raw_bytes = grayscale.tobytes()
+        total = len(raw_bytes)
+        white_pixels = sum(1 for b in raw_bytes if b > 250)
         white_ratio = white_pixels / total if total > 0 else 0
 
         if white_ratio > 0.98:

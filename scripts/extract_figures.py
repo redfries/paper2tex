@@ -537,14 +537,21 @@ def _detect_subfigure_groups(
             group_id += 1
             group_name = f"subfig_group_{group_id}"
             n = len(group)
-            if n == 2:
-                w = "0.48\\textwidth"
-            elif n == 3:
-                w = "0.31\\textwidth"
-            elif n == 4:
-                w = "0.48\\textwidth"
+            
+            # Calculate average aspect ratio of group members
+            avg_ar = sum(figures[idx].aspect_ratio for idx in group) / n if n > 0 else 1.0
+            
+            # Single-column first: if subfigures are tall/narrow (ar < 0.75) and n <= 3,
+            # they fit side-by-side in a SINGLE column (combined width ~ n*ar <= 1.8 col width)
+            if avg_ar < 0.75 and n <= 3:
+                # Fits side-by-side in a single column
+                w = f"{0.95 / n:.2f}\\linewidth"
+            elif avg_ar < 0.75 and n <= 4:
+                # 4 narrow panels can fit side-by-side in double column or 2x2 in single column
+                w = "0.48\\linewidth"
             else:
-                w = f"{1.0 / n:.2f}\\textwidth"
+                # Wider panels: double column row or stacked in single column
+                w = f"{0.96 / n:.2f}\\textwidth"
 
             for idx in group:
                 figures[idx].is_subfigure = True

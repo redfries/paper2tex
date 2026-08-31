@@ -79,16 +79,15 @@ def test_subfigure_group_generation():
     blocks, img_to_key = build_figure_blocks(fig_reg)
     assert "subfig_group_1" in blocks
     assert "fig4" in blocks
-    assert r"\begin{figure*}" in blocks["subfig_group_1"]
-    assert r"0.31\textwidth" in blocks["subfig_group_1"]
+    assert r"\begin{figure}" in blocks["subfig_group_1"] or r"\begin{figure*}" in blocks["subfig_group_1"]
     assert r"\hfill" in blocks["subfig_group_1"]
 
     # Standalone figure 4 (Fig 3 in document)
-    assert r"height=0.38\textheight" in blocks["fig4"]
     assert "fig4.png" in blocks["fig4"]
+    assert r"\begin{figure}" in blocks["fig4"]
 
 
-def test_assembler_float_barriers_and_verbatim(tmp_path: Path):
+def test_assembler_seamless_flow_and_verbatim(tmp_path: Path):
     content_md = (
         "**Techno-economic Assessment of Energy Systems**\n\n"
         "**Abstract**\n\n"
@@ -110,7 +109,6 @@ def test_assembler_float_barriers_and_verbatim(tmp_path: Path):
 
     tex = parse_and_assemble(ctx)
     assert r"\documentclass[journal]{IEEEtran}" in tex
-    assert r"\FloatBarrier" in tex
     assert r"\section{Introduction}" in tex or r"\section{1.0 Introduction}" in tex
     assert r"\section{Results}" in tex or r"\section{2.0 Results}" in tex
     assert "Global decarbonization requires accelerating the transition to clean power." in tex

@@ -178,32 +178,48 @@ def build_figure_blocks(fig_reg: dict[str, Any]) -> tuple[dict[str, str], dict[s
             
             members = [f for f in figures if f.get("subfigure_group") == group]
             n = len(members)
-            
-            lines = [
-                "\\begin{figure*}[htbp]",
-                "\\centering",
-            ]
-            
-            if n == 2:
-                w = "0.48\\textwidth"
-            elif n == 3:
-                w = "0.31\\textwidth"
-            elif n == 4:
-                w = "0.48\\textwidth"
-            else:
-                w = f"{1.0 / n:.2f}\\textwidth"
-
-            sub_items = []
-            for m in members:
-                m_path = m.get("output_path", "")
-                m_name = Path(m_path).name if m_path else f"{m.get('fig_id')}.png"
-                sub_items.append(f"\\includegraphics[width={w},height=0.36\\textheight,keepaspectratio]{{{m_name}}}")
-
-            lines.append("\\hfill\n".join(sub_items))
+            avg_ar = sum(m.get("aspect_ratio", 1.0) for m in members) / n if n > 0 else 1.0
             group_caption = clean_caption or "Figures"
-            lines.append(f"\\caption{{{group_caption}}}")
-            lines.append(f"\\label{{{label}}}")
-            lines.append("\\end{figure*}")
+
+            # Single-column first principle for subfigures:
+            # If panels are tall/narrow (ar < 0.75) and n <= 3, they fit side-by-side in a SINGLE column!
+            if avg_ar < 0.75 and n <= 3:
+                env = "figure"
+                w = f"{0.95 / n:.2f}\\linewidth"
+                sub_items = []
+                for m in members:
+                    m_path = m.get("output_path", "")
+                    m_name = Path(m_path).name if m_path else f"{m.get('fig_id')}.png"
+                    sub_items.append(f"\\includegraphics[width={w}]{{{m_name}}}")
+                img_block = "\\hfill\n".join(sub_items)
+            elif avg_ar < 0.75 and n == 4:
+                env = "figure"
+                w = "0.48\\linewidth"
+                sub_items = []
+                for m in members:
+                    m_path = m.get("output_path", "")
+                    m_name = Path(m_path).name if m_path else f"{m.get('fig_id')}.png"
+                    sub_items.append(f"\\includegraphics[width={w}]{{{m_name}}}")
+                img_block = f"{sub_items[0]}\\hfill {sub_items[1]}\\\\[1ex]\n{sub_items[2]}\\hfill {sub_items[3]}"
+            else:
+                # Genuinely wide multi-panel figure across 2 columns
+                env = "figure*"
+                w = f"{0.96 / n:.2f}\\textwidth"
+                sub_items = []
+                for m in members:
+                    m_path = m.get("output_path", "")
+                    m_name = Path(m_path).name if m_path else f"{m.get('fig_id')}.png"
+                    sub_items.append(f"\\includegraphics[width={w}]{{{m_name}}}")
+                img_block = "\\hfill\n".join(sub_items)
+
+            lines = [
+                f"\\begin{{{env}}}[!t]",
+                "\\centering",
+                img_block,
+                f"\\caption{{{group_caption}}}",
+                f"\\label{{{label}}}",
+                f"\\end{{{env}}}",
+            ]
             
             block_code = "\n".join(lines)
             blocks[group] = block_code
@@ -211,13 +227,14 @@ def build_figure_blocks(fig_reg: dict[str, Any]) -> tuple[dict[str, str], dict[s
                 blocks[m.get("fig_id", "")] = block_code
         else:
             ar = fig.get("aspect_ratio", 1.0)
-            env = "figure*" if ar > 1.4 else "figure"
-            width_spec = "\\linewidth" if env == "figure" else "0.82\\textwidth"
+            # Single-column first: only ultra-wide (> 2.2) figures span 2 columns
+            env = "figure*" if ar > 2.2 else "figure"
+            width_spec = "\\textwidth" if env == "figure*" else "\\linewidth"
             
             lines = [
-                f"\\begin{{{env}}}[htbp]",
+                f"\\begin{{{env}}}[!t]",
                 "\\centering",
-                f"\\includegraphics[width={width_spec},height=0.38\\textheight,keepaspectratio]{{{img_name}}}",
+                f"\\includegraphics[width={width_spec}]{{{img_name}}}",
                 f"\\caption{{{clean_caption}}}",
                 f"\\label{{{label}}}",
                 f"\\end{{{env}}}",
@@ -428,54 +445,110 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
     if current_section["elements"] or current_section["type"] != "preamble":
         sections.append(current_section)
 
-    # Assemble Full LaTeX
-    doc_lines = [
-        "\\documentclass[journal]{IEEEtran}",
-        "\\usepackage{amsmath,amssymb}",
-        "\\usepackage{graphicx}",
-        "\\usepackage{booktabs}",
-        "\\usepackage{multirow}",
-        "\\usepackage{textcomp}",
-        "\\usepackage{placeins}",
-        "\\usepackage{cite}",
-        "\\usepackage{url}",
-        "\\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}",
-        "\\usepackage{cleveref}",
+    # Dynamic Theme & Template Construction
+    spec = ctx.template_spec or {}
+    doc_class = spec.get("document_class") or "IEEEtran"
+    class_opts = spec.get("class_options", ["journal"] if doc_class == "IEEEtran" else [])
+    bib_style = spec.get("bib_style") or ("IEEEtran" if "IEEE" in doc_class else "plain")
+    column_mode = spec.get("column_mode", "twocolumn")
+
+    # Format document class line
+    if class_opts:
+        opts_str = ",".join(class_opts)
+        doc_lines = [f"\\documentclass[{opts_str}]{{{doc_class}}}"]
+    else:
+        doc_lines = [f"\\documentclass{{{doc_class}}}"]
+
+    # Core packages with theme awareness
+    is_acmart = "acmart" in doc_class.lower()
+    is_ieee = "ieeetran" in doc_class.lower()
+    is_llncs = "llncs" in doc_class.lower()
+
+    if not is_acmart:
+        doc_lines.extend([
+            "\\usepackage{amsmath,amssymb}",
+            "\\usepackage{graphicx}",
+            "\\usepackage{booktabs}",
+            "\\usepackage{multirow}",
+            "\\usepackage{textcomp}",
+            "\\usepackage{url}",
+        ])
+        if is_ieee:
+            doc_lines.append("\\usepackage{cite}")
+        elif not is_llncs:
+            doc_lines.append("\\usepackage[numbers]{natbib}")
+        doc_lines.append("\\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}")
+        doc_lines.append("\\usepackage{cleveref}")
+    else:
+        # acmart has built-in amsmath, hyperref, graphicx
+        doc_lines.extend([
+            "\\usepackage{booktabs}",
+            "\\usepackage{multirow}",
+            "\\usepackage{cleveref}",
+        ])
+
+    doc_lines.extend([
         "",
         "\\graphicspath{{figures/}}",
         "",
         "\\begin{document}",
         "",
-    ]
+    ])
 
     # Title
-    doc_lines.append(f"\\title{{{title or 'Techno-economic Analysis on Converting Retiring Coal Plants into Nuclear Plants'}}}")
-    doc_lines.append("")
-    doc_lines.append("\\author{\\IEEEauthorblockN{Author}\\\\\\IEEEauthorblockA{Department of Engineering}}")
-    doc_lines.append("")
-    doc_lines.append("\\maketitle")
+    clean_title = title or "Academic Paper"
+    doc_lines.append(f"\\title{{{clean_title}}}")
     doc_lines.append("")
 
-    # Abstract
-    if abstract_paras:
-        doc_lines.append("\\begin{abstract}")
-        for ap in abstract_paras:
-            doc_lines.append(ap)
+    # Authors based on theme
+    if is_ieee:
+        doc_lines.append("\\author{\\IEEEauthorblockN{Author Name}\\\\\\IEEEauthorblockA{Department of Engineering, University}}")
+    elif is_acmart:
+        doc_lines.append("\\author{Author Name}")
+        doc_lines.append("\\affiliation{\\institution{University}\\city{City}\\country{Country}}")
+        doc_lines.append("\\email{author@university.edu}")
+    elif is_llncs:
+        doc_lines.append("\\author{Author Name}")
+        doc_lines.append("\\institute{Department of Computer Science, University, City, Country}")
+    else:
+        doc_lines.append("\\author{Author Name\\\\Department of Science and Engineering\\\\University}")
+
+    doc_lines.append("")
+
+    # Abstract & Keywords (ordering depends on theme: acmart requires abstract BEFORE maketitle)
+    if is_acmart:
+        if abstract_paras:
+            doc_lines.append("\\begin{abstract}")
+            for ap in abstract_paras:
+                doc_lines.append(ap)
+                doc_lines.append("")
+            doc_lines.append("\\end{abstract}")
             doc_lines.append("")
-        doc_lines.append("\\end{abstract}")
-        doc_lines.append("")
-
-    # Keywords
-    if keywords:
-        doc_lines.append("\\begin{IEEEkeywords}")
-        doc_lines.append(", ".join(keywords))
-        doc_lines.append("\\end{IEEEkeywords}")
+        if keywords:
+            doc_lines.append(f"\\keywords{{{', '.join(keywords)}}}")
+            doc_lines.append("")
+        doc_lines.append("\\maketitle")
         doc_lines.append("")
     else:
-        doc_lines.append("\\begin{IEEEkeywords}")
-        doc_lines.append("Coal-to-Nuclear (C2N), Decarbonization, SMR, Levelized Cost of Electricity (LCOE), Repowering.")
-        doc_lines.append("\\end{IEEEkeywords}")
+        doc_lines.append("\\maketitle")
         doc_lines.append("")
+        if abstract_paras:
+            doc_lines.append("\\begin{abstract}")
+            for ap in abstract_paras:
+                doc_lines.append(ap)
+                doc_lines.append("")
+            doc_lines.append("\\end{abstract}")
+            doc_lines.append("")
+        if keywords:
+            if is_ieee:
+                doc_lines.append("\\begin{IEEEkeywords}")
+                doc_lines.append(", ".join(keywords))
+                doc_lines.append("\\end{IEEEkeywords}")
+            elif is_llncs:
+                doc_lines.append(f"\\keywords{{{', '.join(keywords)}}}")
+            else:
+                doc_lines.append(f"\\textbf{{Keywords:}} {', '.join(keywords)}")
+            doc_lines.append("")
 
     # Body Sections
     for sec in sections:
@@ -487,11 +560,9 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
             continue
 
         if sec_type == "section" and sec_title and sec_title != "Preamble":
-            doc_lines.append("\\FloatBarrier")
             doc_lines.append(f"\\section{{{sec_title}}}")
             doc_lines.append("")
         elif sec_type == "subsection" and sec_title:
-            doc_lines.append("\\FloatBarrier")
             doc_lines.append(f"\\subsection{{{sec_title}}}")
             doc_lines.append("")
 
@@ -518,8 +589,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
             doc_lines.append("")
 
     # Bibliography
-    doc_lines.append("\\FloatBarrier")
-    doc_lines.append("\\bibliographystyle{IEEEtran}")
+    doc_lines.append(f"\\bibliographystyle{{{bib_style}}}")
     doc_lines.append("\\bibliography{references}")
     doc_lines.append("")
     doc_lines.append("\\end{document}")
