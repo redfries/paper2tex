@@ -217,11 +217,13 @@ def extract_tables(docx_path: Path, work_dir: Path) -> TableRegistry:
                     c_idx += colspan
                     
             # Determine if table should be wide (span 2 columns) or single column
-            # Tables with <= 5 columns of moderate text fit comfortably in a single column with \small / \footnotesize
             total_text_len = sum(len(cell_matrix[r][c].content) for r in cell_matrix for c in cell_matrix[r] if cell_matrix[r].get(c))
             avg_cell_len = total_text_len / (num_rows * num_cols) if (num_rows * num_cols) > 0 else 0
+            max_cell_len = max((len(cell_matrix[r][c].content) for r in cell_matrix for c in cell_matrix[r] if cell_matrix[r].get(c)), default=0)
+            has_multi = any(cell_matrix[r][c].colspan > 1 for r in cell_matrix for c in cell_matrix[r] if cell_matrix[r].get(c))
             
-            is_wide = num_cols >= 6 or (num_cols >= 5 and avg_cell_len > 25)
+            # 5+ cols or 4 cols with wide text/spans MUST span 2 columns to prevent column text collision
+            is_wide = (num_cols >= 5) or (num_cols >= 4 and (has_multi or avg_cell_len > 12 or max_cell_len > 25))
             
             latex_lines = []
             env = "table*" if is_wide else "table"
@@ -233,14 +235,11 @@ def extract_tables(docx_path: Path, work_dir: Path) -> TableRegistry:
                 latex_lines.append(f"\\caption{{{clean_cap}}}")
                 latex_lines.append(f"\\label{{{label}}}")
                 
+            cols_format = "l" + "c" * (num_cols - 1)
             if is_wide:
-                cols_format = "l" + "c" * (num_cols - 1)
                 latex_lines.append(f"\\begin{{tabular*}}{{\\textwidth}}{{@{{\\extracolsep{{\\fill}}}}{cols_format}}}")
-            elif num_cols >= 4:
-                cols_format = "l" + "c" * (num_cols - 1)
-                latex_lines.append(f"\\begin{{tabular*}}{{\\columnwidth}}{{@{{\\extracolsep{{\\fill}}}}{cols_format}}}")
             else:
-                cols_format = "l" * num_cols
+                latex_lines.append(f"\\resizebox{{\\columnwidth}}{{!}}{{%")
                 latex_lines.append(f"\\begin{{tabular}}{{{cols_format}}}")
             latex_lines.append(f"\\toprule")
             
@@ -283,10 +282,11 @@ def extract_tables(docx_path: Path, work_dir: Path) -> TableRegistry:
                     latex_lines.append("\\midrule")
                     
             latex_lines.append("\\bottomrule")
-            if is_wide or num_cols >= 4:
+            if is_wide:
                 latex_lines.append("\\end{tabular*}")
             else:
                 latex_lines.append("\\end{tabular}")
+                latex_lines.append("}")
             if notes:
                 latex_lines.append("\\vspace{1ex}")
                 latex_lines.append("\\raggedright")

@@ -352,6 +352,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
             
             if not re.match(r"^(?:Fig|Figure|Table|Tab)\b", sec_title, re.IGNORECASE) and len(sec_title) <= 140:
                 clean_heading = sanitize_prose(sec_title.rstrip(":"), cite_map, cross_ref_map)
+                clean_heading = re.sub(r"\s*\(\s*\d+\s*(?:words?|w|chars?)\s*\)", "", clean_heading, flags=re.IGNORECASE).strip()
                 
                 # Determine section type by hash level
                 if h_level == 1:
@@ -391,6 +392,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
                         break
 
                     clean_heading = sec_title.rstrip(":")
+                    clean_heading = re.sub(r"\s*\(\s*\d+\s*(?:words?|w|chars?)\s*\)", "", clean_heading, flags=re.IGNORECASE).strip()
                     stype = "section"
                     
                     if sec_num:

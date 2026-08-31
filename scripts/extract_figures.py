@@ -534,32 +534,61 @@ def _detect_subfigure_groups(
                 break
 
         if len(group) >= 2:
-            group_id += 1
-            group_name = f"subfig_group_{group_id}"
-            n = len(group)
-            
-            # Calculate average aspect ratio of group members
-            avg_ar = sum(figures[idx].aspect_ratio for idx in group) / n if n > 0 else 1.0
-            
-            # Single-column first: if subfigures are tall/narrow (ar < 0.75) and n <= 3,
-            # they fit side-by-side in a SINGLE column (combined width ~ n*ar <= 1.8 col width)
-            if avg_ar < 0.75 and n <= 3:
-                # Fits side-by-side in a single column
-                w = f"{0.95 / n:.2f}\\linewidth"
-            elif avg_ar < 0.75 and n <= 4:
-                # 4 narrow panels can fit side-by-side in double column or 2x2 in single column
-                w = "0.48\\linewidth"
-            else:
-                # Wider panels: double column row or stacked in single column
-                w = f"{0.96 / n:.2f}\\textwidth"
+            # Check if all or some group members have identical image content (duplicate Word drawings)
+            import hashlib
+            def _get_hash(fig_idx: int) -> str:
+                fp = Path(figures[fig_idx].output_path)
+                if not fp.exists():
+                    fp = Path(figures[fig_idx].embedded_path)
+                if fp.exists():
+                    try:
+                        return hashlib.sha256(fp.read_bytes()).hexdigest()
+                    except Exception:
+                        return f"path:{fp.name}"
+                return f"idx:{fig_idx}"
 
-            for idx in group:
-                figures[idx].is_subfigure = True
-                figures[idx].subfigure_group = group_name
-                figures[idx].width_hint = w
+            group_hashes = [_get_hash(idx) for idx in group]
+            unique_hashes = set(group_hashes)
+            
+            if len(unique_hashes) == 1:
+                # All drawings in this group are identical copies of the same image!
+                # Collapse to a single standalone figure
+                primary_idx = group[0]
+                figures[primary_idx].is_subfigure = False
+                figures[primary_idx].subfigure_group = None
+                figures[primary_idx].width_hint = "\\linewidth"
+                # Mark duplicates to be pruned
+                for dup_idx in group[1:]:
+                    figures[dup_idx].subfigure_group = "__DUPLICATE_DROP__"
+            else:
+                group_id += 1
+                group_name = f"subfig_group_{group_id}"
+                n = len(group)
+                
+                # Calculate average aspect ratio of group members
+                avg_ar = sum(figures[idx].aspect_ratio for idx in group) / n if n > 0 else 1.0
+                
+                # Single-column first: if subfigures are tall/narrow (ar < 0.75) and n <= 3,
+                # they fit side-by-side in a SINGLE column (combined width ~ n*ar <= 1.8 col width)
+                if avg_ar < 0.75 and n <= 3:
+                    # Fits side-by-side in a single column
+                    w = f"{0.95 / n:.2f}\\linewidth"
+                elif avg_ar < 0.75 and n <= 4:
+                    # 4 narrow panels can fit side-by-side in double column or 2x2 in single column
+                    w = "0.48\\linewidth"
+                else:
+                    # Wider panels: double column row or stacked in single column
+                    w = f"{0.96 / n:.2f}\\textwidth"
+
+                for idx in group:
+                    figures[idx].is_subfigure = True
+                    figures[idx].subfigure_group = group_name
+                    figures[idx].width_hint = w
 
         i = j if j > i + 1 else i + 1
 
+    # Prune marked duplicate drawings
+    figures = [f for f in figures if f.subfigure_group != "__DUPLICATE_DROP__"]
     return figures
 
 
