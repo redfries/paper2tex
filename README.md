@@ -1,58 +1,42 @@
 # 📄 paper2tex
 
-> **Convert your Word paper to conference-formatted LaTeX — without the pain.**
+> **Convert your Word paper into conference-formatted LaTeX in seconds — with 0 corrupted math, 0 question marks, and perfectly formatted figures.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 
 ---
 
-## The Problem
+## 😫 The Problem Everyone Faces
 
-Every semester, thousands of students go through this nightmare:
+Every semester, students and researchers go through the same nightmare:
 
-1. Write paper in Word (because that's what they know)
-2. Conference requires LaTeX (`.tex`) format
-3. Upload `.docx` to ChatGPT, ask for `.tex`
-4. Copy-paste into Overleaf
-5. **Fight errors for 3 hours** — `?` symbols everywhere, math corrupted, tables broken, references missing
-6. Submit at 11:59 PM with bugs still in it
+```
+[Write in Word] ──► [Paste into ChatGPT] ──► [Paste in Overleaf] ──► [3 Hours of Errors]
+                         (Tokenizer ruins         (Missing packages,
+                          math & ° symbols)        broken tables & figures)
+```
 
-The root cause: **ChatGPT re-types your document through its tokenizer**, corrupting math, special characters (°, µ, ≈), and symbols along the way. It can't compile LaTeX, so it can't catch its own mistakes.
-
-## The Solution
-
-`paper2tex` is an **agent skill** (for [Antigravity](https://antigravity.dev), Claude Code, OpenCode, Cursor, etc.) that does this properly:
-
-- **Deterministic extraction** — math is converted via Microsoft's own OMML→MathML→LaTeX pipeline, never through an LLM
-- **Direct XML parsing** — tables with merged cells, cross-references, and citations are handled by parsing the `.docx` XML directly
-- **Auto-compile and fix** — runs LaTeX compiler, reads error logs, fixes issues automatically, recompiles (up to 10 iterations)
-- **Verification gate** — checks section counts, figure counts, citation integrity, and special characters in the final PDF before delivery
-- **Your text is sacred** — zero rewording, zero "improvements", verbatim extraction guaranteed
-
-## Supported Conferences
-
-Built-in tier-1 recipes for the most common templates:
-
-| Conference | Template Class | Engine |
-|-----------|---------------|--------|
-| IEEE Conference | `IEEEtran` | xelatex |
-| IEEE Transaction/Journal | `IEEEtran` | xelatex |
-| ACM SIGCONF | `acmart` | xelatex |
-| Springer LNCS | `llncs` | xelatex |
-| NeurIPS | `neurips` | xelatex |
-| ICML | `icml` | pdflatex |
-| CVPR | `cvpr` | pdflatex |
-
-**Any other template**: just provide the conference template `.zip` file and the skill will analyze it automatically.
+1. **ChatGPT re-types your document through its tokenizer**, corrupting equations, degree symbols (`°`), Greek letters, and chemical subscripts (`CO2`).
+2. **Figures get squished, rotated sideways, or clustered** at the very end of the PDF.
+3. You spend hours fighting red LaTeX errors right before the submission deadline.
 
 ---
 
+## ✨ The Solution: paper2tex
+
+`paper2tex` is an **AI agent skill** that uses a 100% deterministic local toolchain:
+
+* ✅ **Verbatim Text** — Zero rewording or "hallucinations". Your exact prose is preserved.
+* ✅ **Perfect Math** — Equations are extracted directly from Microsoft Word's XML equation engine (`OMML → MathML → LaTeX`).
+* ✅ **Smart Figures** — Automatically handles subfigures `(a)`, `(b)`, `(c)`, auto-corrects rotated/sideways images, and scales them cleanly to column width.
+* ✅ **Auto-Compile & Fix** — Compiles locally, reads the error log, automatically repairs missing packages, and produces a publication-ready PDF.
+
 ---
 
-## 🚀 One-Shot Agent Install (Copy & Paste to Any AI Agent)
+## 🚀 1-Click Install for AI Agents (Copy & Paste)
 
-Copy and paste this prompt directly into **Antigravity, Claude Code, Cursor, OpenCode, Codex, or Windsurf** to install `paper2tex` globally and verify your environment in 10 seconds:
+Copy and paste this single prompt directly into **Antigravity, Claude Code, Cursor, OpenCode, Codex, or Windsurf**:
 
 ```text
 Install the paper2tex skill globally. Clone https://github.com/redfries/paper2tex.git into my global agent skills directory (or ~/.gemini/antigravity/skills/paper2tex, ~/.claude/skills/paper2tex, or current workspace skills), ensure prerequisites are installed (pandoc, tectonic, and python packages: lxml, python-docx, Pillow, pymupdf, requests), and run `python scripts/preflight.py` to verify that paper2tex is ready.
@@ -60,43 +44,133 @@ Install the paper2tex skill globally. Clone https://github.com/redfries/paper2te
 
 ---
 
-## ⚡ How to Forcefully Invoke paper2tex
+## ⚡ How to Ask Your Agent to Convert a Paper
 
-To make sure your AI agent uses `paper2tex`'s deterministic toolchain instead of attempting a naive LLM hallucination, use an explicit directive:
+To make sure your AI uses `paper2tex`'s local toolchain (instead of trying to rewrite the document from memory), use an explicit command:
 
 ```text
-Use paper2tex skill to convert "paper.docx" into IEEE conference format (or ACM SIGCONF / Springer LNCS).
+Use paper2tex skill to convert "paper.docx" into IEEE conference format.
+```
+
+Or for other conferences/journals:
+
+```text
+Use paper2tex skill to format "thesis.docx" for ACM SIGCONF, my figures are in ./figures.
 ```
 ```text
-Run paper2tex on "thesis.docx" targeting IEEEtran with my figures in ./figures.
+Run paper2tex on "manuscript.docx" targeting Springer LNCS.
 ```
 
 ---
 
-## 🖼️ Figure Workflow: Upfront Clarification
+## 🖼️ How to Provide Figures (The Visual Guide)
 
-When `paper2tex` is triggered, the agent will always ask you upfront:
-> *"Do you have a dedicated `figures/` folder with high-resolution or vector images (e.g., `./figures`), or should I extract the embedded images directly from the Word document? (Reply with your folder path or simply 'extract')"*
+`paper2tex` is designed to handle figures cleanly even if you are non-technical.
 
-- **Reply `extract`**: The agent deterministically extracts all images from `.docx`, auto-corrects OpenXML rotation transforms, and normalizes aspect ratios.
-- **Reply with a path (e.g. `./figures`)**: The agent matches your high-res vector (`.pdf`, `.svg`) and 300+ DPI raster assets with document figures automatically.
+### 1. The Recommended Folder Structure
+
+Place your Word file and an optional `figures/` folder in the same place:
+
+```
+my_paper_project/
+│
+├── my_paper.docx               <-- Your main paper draft
+│
+└── figures/                    <-- (Optional but recommended for best quality)
+    ├── fig1_a.pdf              <-- Subfigure (a) (Vector PDF or high-res PNG)
+    ├── fig1_b.pdf              <-- Subfigure (b)
+    ├── fig1_c.pdf              <-- Subfigure (c)
+    ├── fig2.png                <-- Standalone Figure 2 (>= 300 DPI)
+    └── fig3.svg                <-- Vector plot for Figure 3
+```
 
 ---
 
-## Manual Installation & Quick Start
+### 2. Single Figures vs. Multi-Panel Subfigures
 
-### 1. Install Prerequisites
+Here is how to set up your images and captions in Word so the output is flawless:
+
+#### Case A: Single Figure (1 Image)
+
+```
+[ Your Chart or Image ]
+
+Caption in Word:
+Fig. 2: System performance comparison under varied load conditions.
+```
+* **What paper2tex does**: Scales the image to fit the exact column width cleanly and anchors the caption directly underneath.
+
+---
+
+#### Case B: Multi-Panel Subfigures (a, b, c)
+
+When you have multiple related diagrams in one figure:
+
+```
+┌────────────────────────────────────────┐
+│  [ Subfigure A: Greenfield Layout ]    │  <-- (a)
+├────────────────────────────────────────┤
+│  [ Subfigure B: Partial Reuse Layout ] │  <-- (b)
+├────────────────────────────────────────┤
+│  [ Subfigure C: Maximal Reuse Layout ] │  <-- (c)
+└────────────────────────────────────────┘
+
+Caption in Word:
+Fig. 1: The three different scenarios. (a) Case #1: greenfield nuclear power plant; (b) Case #2: reuse of retiring coal plant infrastructure; (c) Case #3: maximal reuse of turbine components.
+```
+
+* **What paper2tex does**:
+  1. Detects `(a)`, `(b)`, `(c)` automatically.
+  2. Splits the main title from each sub-description.
+  3. Stacks wide landscape schematics vertically (or places tall charts side-by-side) with official `(a)`, `(b)`, `(c)` subcaptions beneath each panel.
+  4. Rotates any sideways images upright automatically.
+
+---
+
+### 3. The Upfront Clarification Question
+
+When you tell an AI agent to run `paper2tex`, the agent will ask:
+> *"Do you have a dedicated `figures/` folder with high-resolution/vector images (e.g., `./figures`), or should I extract the embedded images directly from the Word document?"*
+
+* **Simply reply `extract`**: The agent will extract, auto-rotate, and format all embedded images directly from your `.docx`.
+* **Or reply with your folder path** (e.g., `./figures`): The agent will use your high-res vector (`.pdf`, `.svg`) or 300+ DPI images for crystal-clear print quality.
+
+---
+
+## 📋 Supported Conferences & Journals
+
+`paper2tex` includes built-in recipes for all major academic templates:
+
+| Venue / Organization | Template Class | Output Engine | Default Columns |
+|---|---|---|---|
+| **IEEE Conferences** | `IEEEtran` | XeLaTeX | 2 Columns |
+| **IEEE Transactions & Journals** | `IEEEtran` | XeLaTeX | 2 Columns |
+| **ACM SIGCONF (CCS, CHI, SIGMOD)** | `acmart` | XeLaTeX | 2 Columns |
+| **Springer LNCS** | `llncs` | XeLaTeX | 1 Column |
+| **NeurIPS** | `neurips` | XeLaTeX | 1 Column |
+| **ICML / CVPR** | `icml` / `cvpr` | pdfLaTeX / XeLaTeX | 2 Columns |
+| **Elsevier / MDPI / Nature** | Generic / Custom | XeLaTeX | Custom |
+
+> 💡 **Have a custom conference template?** Just provide the template `.zip` file from the conference website. `paper2tex` will automatically extract its `.cls` file and configure the preamble.
+
+---
+
+## 🛠️ Manual Installation & CLI (For Developers)
+
+If you prefer to run `paper2tex` manually from your command line:
+
+### 1. Install System Tools
 
 ```powershell
 # Windows (PowerShell)
 winget install JohnMacFarlane.Pandoc
-winget install tectonic                # or: scoop install tectonic
+winget install tectonic
 
-# Python packages
+# Python Dependencies
 pip install lxml python-docx Pillow pymupdf requests
 ```
 
-### 2. Clone This Repo
+### 2. Clone & Install
 
 ```bash
 git clone https://github.com/redfries/paper2tex.git
@@ -104,186 +178,49 @@ cd paper2tex
 pip install -e .
 ```
 
-### 3. Check Everything Works
+### 3. Verify System Setup
 
 ```bash
 python scripts/preflight.py
 ```
 
-### 4. Use It
-
-#### With an AI Agent (Recommended)
-
-Just tell your agent:
-
-```
-Use paper2tex skill to convert my paper.docx to IEEE conference format
-```
-
-or
-
-```
-Format my thesis.docx for ACM SIGCONF using paper2tex, my figures are in the figs/ folder
-```
-
-> ⚠️ **Agent ignoring the skill?** Read the **[Setup Guide](SETUP.md)** to wire paper2tex into your agent (Claude Code, Cursor, Antigravity, OpenCode, etc.). Without setup, most agents will try to do the conversion themselves — badly.
-
-#### Manual CLI
+### 4. Run the Pipeline
 
 ```bash
-# Step 1: Extract everything from the docx
+# 1. Extract content and figures
 python scripts/extract.py paper.docx work/
 
-# Step 2: Analyze the template
-python scripts/template_spec.py "IEEE conference" work/
+# 2. Select target template
+python scripts/template_spec.py "ieee-conference" work/
 
-# Step 3: (Agent assembles main.tex using the registries)
+# 3. Assemble publication-ready LaTeX
+python scripts/assemble.py work/
 
-# Step 4: Compile
+# 4. Compile to PDF with automatic fix loop
 python scripts/compile.py work/main.tex
 
-# Step 5: Verify
+# 5. Verify character & citation fidelity
 python scripts/verify.py work/main.tex
-
-# Step 6: Package for Overleaf
-python scripts/overleaf_export.py work/submission/
 ```
 
 ---
 
-## How It Works
+## ❓ Frequently Asked Questions (FAQ)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    paper2tex Pipeline                           │
-│                                                                 │
-│  student.docx ──► PREPROCESS ──► EXTRACT ──► ASSEMBLE          │
-│                   (Symbol fix,   (Math,       (LLM maps         │
-│                    cross-refs,    Tables,      content into      │
-│                    citations)     Figures,     template)         │
-│                                  Bib)                           │
-│                                                                 │
-│  ──► LINT ──► COMPILE-FIX ──► VERIFY ──► DELIVER               │
-│      (chktex,  (tectonic,      (log audit,  (main.tex,         │
-│       escape    14-pattern      manifest     references.bib,    │
-│       chars)    error fix)      diff, char   figures/,          │
-│                                 spot-check)  main.pdf,          │
-│                                              report.md,         │
-│                                              overleaf.zip)      │
-└─────────────────────────────────────────────────────────────────┘
-```
+#### Will this change or reword my writing?
+**Never.** The #1 core rule of `paper2tex` is **100% verbatim text preservation**. No text is summarized, reworded, or dropped.
 
-### The Key Insight: What the LLM Does vs. What It Doesn't
+#### Why did my figures look tiny or sideways before?
+Microsoft Word stores rotated images with internal rotation angle transforms (`rot=5400000`). If tools extract the raw file without reading Word's XML transform, the image displays sideways. `paper2tex` reads the OpenXML transformation tags and normalizes every graphic with Pillow so it appears upright and at full readability.
 
-| Component | Handled by | Why |
-|-----------|-----------|-----|
-| Text extraction | **Pandoc** (deterministic) | Never corrupts prose |
-| Math conversion | **OMML→MathML→LaTeX pipeline** (deterministic) | Never produces `?` symbols |
-| Table reconstruction | **Direct XML parsing** (deterministic) | Pandoc breaks on merged cells |
-| Figure extraction | **File operations** (deterministic) | Original quality, scans external folders |
-| Bibliography | **AnyStyle + Crossref** (deterministic) | LLMs hallucinate DOIs |
-| Cross-references | **XML field code parsing** (deterministic) | Bookmark→`\label{}`/`\ref{}` map |
-| Special characters | **Mapping table** (deterministic) | °→`\textdegree{}`, µ→`\textmu{}` |
-| **Template mapping** | **LLM** ✨ | Arranging content into the template format — the one job it's good at |
-| Compilation | **tectonic/latexmk** (deterministic) | Real compiler, real error logs |
-| Verification | **pdftotext + manifest diff** (deterministic) | Catches what the compiler misses |
+#### Can I upload the output to Overleaf?
+**Yes!** `paper2tex` produces an `overleaf.zip` inside `work/submission/`. You can upload this zip file directly into Overleaf (Overleaf → *New Project* → *Upload Project*) and compile instantly with 0 errors.
 
-The LLM is confined to **structural mapping only** — arranging your already-extracted content into the conference template. Everything else is deterministic tooling that can't hallucinate.
+#### Do I need to install a 6 GB TeX Live distribution?
+**No.** `paper2tex` uses **Tectonic** by default — a lightweight, modern TeX engine that automatically downloads only the packages your document requires on the fly (~50 MB).
 
 ---
 
-## Project Structure
+## 📄 License
 
-```
-paper2tex/
-├── SKILL.md                      # Agent workflow instructions (start here)
-├── README.md                     # You are here
-├── LICENSE                       # MIT
-├── pyproject.toml                # Python dependencies
-│
-├── scripts/
-│   ├── preflight.py              # Check tool availability
-│   ├── preprocess.py             # Symbol font fix, cross-refs, tracked changes
-│   ├── extract.py                # Main orchestrator (chains all extractors)
-│   ├── extract_math.py           # OMML → MathML → LaTeX
-│   ├── extract_tables.py         # XML table parsing + merged cells
-│   ├── extract_figures.py        # Embedded + external figure reconciliation
-│   ├── extract_bib.py            # Bibliography: Zotero/AnyStyle/Crossref
-│   ├── template_spec.py          # Template analysis + 7 tier-1 recipes
-│   ├── compile.py                # Compile-fix loop + error classifier
-│   ├── verify.py                 # 6-check QA gate + report.md
-│   ├── visual_qa.py              # PDF → PNG rendering for visual check
-│   ├── overleaf_export.py        # Package into Overleaf-ready zip
-│   ├── docling_extract.py        # Optional: IBM Docling for complex docs
-│   │
-│   ├── prompts/
-│   │   ├── rules.md              # 10 hard constraints for LLM assembly
-│   │   ├── assemble_section.md   # Per-section assembly prompt template
-│   │   └── assemble_preamble.md  # Preamble + author block prompt
-│   │
-│   └── utils/
-│       └── char_map.py           # 100+ Unicode → LaTeX mappings
-│
-└── tests/
-    └── generate_corpus.py        # Generate synthetic test papers
-```
-
----
-
-## FAQ
-
-**"Will it change my text?"**
-No. The #1 rule in `SKILL.md` is **verbatim text preservation**. The LLM is explicitly forbidden from rewording, "improving", or reorganizing your prose. Your words stay exactly as written.
-
-**"What about the `?` symbols I keep getting?"**
-The `?` bug has three causes: (1) pdflatex can't handle Unicode like ° or µ — we use **xelatex** by default; (2) the LLM re-types math through its tokenizer — we **never** let the LLM touch math; (3) BibTeX keys don't match — our verification gate catches this before delivery.
-
-**"My figures are in a separate folder, not in the .docx"**
-The skill auto-scans `figures/`, `figs/`, `images/`, `img/`, `media/`, `assets/` directories next to your `.docx`. It also prefers external files (especially vector formats like PDF/SVG) over the lower-quality embedded copies. You can also pass `--figures-dir` explicitly.
-
-**"Do I need a full TeX Live install (6+ GB)?"**
-No. We use **Tectonic** — a single binary that downloads only the packages it needs, on demand. One-command install, ~50 MB.
-
-**"Can I use this with Overleaf?"**
-Yes! The skill generates an `overleaf.zip` containing `main.tex`, `references.bib`, and all figures. Just upload it: Overleaf → New Project → Upload Project.
-
-**"What if my paper has MathType equations (legacy)?"**
-Legacy MathType equations (OLE objects) can't be extracted deterministically. The skill detects them and flags a warning in the report. You'll need to re-enter those equations manually (or use the equation editor in Word 2016+, which uses OMML that we handle perfectly).
-
----
-
-## How to Add a New Conference Recipe
-
-Edit `scripts/template_spec.py` and add an entry to `TIER1_RECIPES`:
-
-```python
-"your-conference": {
-    "name": "Your Conference 2026",
-    "document_class": "yourclass",
-    "class_options": ["option1"],
-    "engine": "xelatex",
-    "bib_style": "yourbst",
-    "bib_engine": "bibtex",
-    "column_mode": "twocolumn",
-    "author_format": "\\author{NAME}\\affiliation{INST}",
-    "keywords_cmd": "\\keywords{...}",
-},
-```
-
-Then submit a PR! We especially need recipes for: AAAI, EMNLP, ICLR, ECCV, MICCAI, Elsevier journals, Springer journals.
-
----
-
-## Contributing
-
-We welcome contributions! Especially:
-- **New tier-1 recipes** for conferences you use
-- **Test corpus papers** (anonymized `.docx` files that exercise edge cases)
-- **Bug reports** with the `.docx` file that failed (anonymize sensitive content)
-- **Error classifier patterns** for the compile-fix loop
-
-See [Issues](../../issues) to get started.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+MIT License — see [LICENSE](LICENSE) for details. Open-source and free for all students, researchers, and developers.
