@@ -10,6 +10,14 @@ You have a full deterministic extraction pipeline. Your **only creative job** is
 
 ## Step-by-Step
 
+### 0. Mandatory Upfront Figure Clarification (ASK THE USER FIRST)
+
+Before running extraction, ask the user:
+> *"Do you have a dedicated `figures/` folder with high-resolution or vector images (e.g., `./figures`), or should I extract the embedded images directly from the Word document? (Reply with your folder path or simply 'extract')"*
+
+- **If the user replies `'extract'`**: Run extraction without `--figures-dir`. The pipeline will automatically extract, normalize, and auto-rotate all embedded drawings from `.docx`.
+- **If the user provides a path** (e.g., `./figures`): Pass `--figures-dir <path>` to extraction. The pipeline will reconcile vector (`.pdf`, `.svg`) and high-res raster assets automatically.
+
 ### 1. Run preflight check
 
 ```bash
@@ -29,7 +37,8 @@ This creates `work/manifest.json` and all registry files:
 - `work/content.tex` — Pandoc's LaTeX output (reference only)
 - `work/math_registry.json` — all equations as LaTeX
 - `work/table_registry.json` — all tables as LaTeX `\begin{tabular}` blocks
-- `work/figures/` — all figures, best quality available
+- `work/figures/` — all figures, best quality available, properly rotated and normalized
+- `work/figures_registry.json` — figure metadata, subcaptions, aspect ratios
 - `work/references.bib` — bibliography in BibTeX format
 - `work/manifest.json` — counts, cross-ref map, special chars, warnings
 
@@ -41,9 +50,9 @@ python scripts/template_spec.py "<conference name or template.zip>" work/
 
 This creates `work/template-spec.json` with document class, packages, author format, bib style.
 
-### 4. Assemble main.tex (YOUR JOB)
+### 4. Assemble main.tex (Deterministic AST or LLM Assembly)
 
-Read `scripts/prompts/rules.md` for the 10 hard rules. The critical ones:
+Use `python scripts/assemble.py work/` for 100% deterministic assembly with template-aware subfigures (`\subfloat` in IEEEtran, `subcaption` in ACM/LNCS), or manually assemble following the 10 hard rules:
 
 1. **Text is VERBATIM** from `content.md` — zero rewording
 2. **Math is COPIED** from `math_registry.json` — never rewrite equations
@@ -52,8 +61,6 @@ Read `scripts/prompts/rules.md` for the 10 hard rules. The critical ones:
 5. **Cross-references** use `\cref{label}` from `manifest.json` cross_ref_map
 6. **Citations** use `\cite{key}` from `references.bib` keys
 7. **Ambiguous content** → `% TODO(paper2tex): describe issue` comment
-
-Build `work/main.tex` following the template spec. See `scripts/prompts/assemble_preamble.md` for preamble format and `scripts/prompts/assemble_section.md` for per-section assembly.
 
 ### 5. Compile
 
@@ -67,9 +74,10 @@ If errors remain after auto-fix, read the error, fix **markup only** (never cont
 
 ```bash
 python scripts/verify.py work/main.tex
+python scripts/visual_qa.py work/main.pdf work/
 ```
 
-This produces `work/report.md`. If any **error-level** checks fail, fix and re-verify.
+This produces `work/report.md` and renders PDF pages for visual inspection.
 
 ### 7. Package for delivery
 
@@ -88,6 +96,7 @@ Present `report.md` to the student.
 
 ## ABSOLUTE RULES (non-negotiable)
 
+- **ALWAYS ask about the figures folder before extraction.**
 - **NEVER rewrite, improve, or edit the student's text.** Verbatim only.
 - **NEVER regenerate math.** Use the registry values byte-for-byte.
 - **NEVER invent citation keys or labels.** Registry keys only.

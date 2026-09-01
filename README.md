@@ -48,11 +48,42 @@ Built-in tier-1 recipes for the most common templates:
 
 ---
 
-> 📋 **First time?** Read the **[Document Preparation Guide](PREREQUISITES.md)** to make sure your `.docx` is ready. 5 minutes of prep saves hours of fixing.
+---
+
+## 🚀 One-Shot Agent Install (Copy & Paste to Any AI Agent)
+
+Copy and paste this prompt directly into **Antigravity, Claude Code, Cursor, OpenCode, Codex, or Windsurf** to install `paper2tex` globally and verify your environment in 10 seconds:
+
+```text
+Install the paper2tex skill globally. Clone https://github.com/redfries/paper2tex.git into my global agent skills directory (or ~/.gemini/antigravity/skills/paper2tex, ~/.claude/skills/paper2tex, or current workspace skills), ensure prerequisites are installed (pandoc, tectonic, and python packages: lxml, python-docx, Pillow, pymupdf, requests), and run `python scripts/preflight.py` to verify that paper2tex is ready.
+```
 
 ---
 
-## Quick Start
+## ⚡ How to Forcefully Invoke paper2tex
+
+To make sure your AI agent uses `paper2tex`'s deterministic toolchain instead of attempting a naive LLM hallucination, use an explicit directive:
+
+```text
+Use paper2tex skill to convert "paper.docx" into IEEE conference format (or ACM SIGCONF / Springer LNCS).
+```
+```text
+Run paper2tex on "thesis.docx" targeting IEEEtran with my figures in ./figures.
+```
+
+---
+
+## 🖼️ Figure Workflow: Upfront Clarification
+
+When `paper2tex` is triggered, the agent will always ask you upfront:
+> *"Do you have a dedicated `figures/` folder with high-resolution or vector images (e.g., `./figures`), or should I extract the embedded images directly from the Word document? (Reply with your folder path or simply 'extract')"*
+
+- **Reply `extract`**: The agent deterministically extracts all images from `.docx`, auto-corrects OpenXML rotation transforms, and normalizes aspect ratios.
+- **Reply with a path (e.g. `./figures`)**: The agent matches your high-res vector (`.pdf`, `.svg`) and 300+ DPI raster assets with document figures automatically.
+
+---
+
+## Manual Installation & Quick Start
 
 ### 1. Install Prerequisites
 
@@ -62,7 +93,7 @@ winget install JohnMacFarlane.Pandoc
 winget install tectonic                # or: scoop install tectonic
 
 # Python packages
-pip install lxml python-docx requests
+pip install lxml python-docx Pillow pymupdf requests
 ```
 
 ### 2. Clone This Repo
@@ -86,13 +117,13 @@ python scripts/preflight.py
 Just tell your agent:
 
 ```
-Convert my paper.docx to IEEE conference format
+Use paper2tex skill to convert my paper.docx to IEEE conference format
 ```
 
 or
 
 ```
-Format my thesis.docx for ACM SIGCONF, my figures are in the figs/ folder
+Format my thesis.docx for ACM SIGCONF using paper2tex, my figures are in the figs/ folder
 ```
 
 > ⚠️ **Agent ignoring the skill?** Read the **[Setup Guide](SETUP.md)** to wire paper2tex into your agent (Claude Code, Cursor, Antigravity, OpenCode, etc.). Without setup, most agents will try to do the conversion themselves — badly.
