@@ -80,7 +80,7 @@ def test_subfigure_group_generation():
     assert "subfig_group_1" in blocks
     assert "fig4" in blocks
     assert r"\begin{figure}" in blocks["subfig_group_1"] or r"\begin{figure*}" in blocks["subfig_group_1"]
-    assert r"\hfill" in blocks["subfig_group_1"]
+    assert r"\subfloat" in blocks["subfig_group_1"] or r"\begin{subfigure}" in blocks["subfig_group_1"]
 
     # Standalone figure 4 (Fig 3 in document)
     assert "fig4.png" in blocks["fig4"]

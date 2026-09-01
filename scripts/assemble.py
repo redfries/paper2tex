@@ -139,9 +139,9 @@ def build_cite_map(bib_reg: dict[str, Any], work_dir: Path) -> dict[str, str]:
     return cite_map
 
 
-def build_figure_blocks(fig_reg: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
+def build_figure_blocks(fig_reg: dict[str, Any], doc_class: str = "IEEEtran") -> tuple[dict[str, str], dict[str, str]]:
     """
-    Generates LaTeX figure blocks from figures_registry.json.
+    Generates template-aware LaTeX figure blocks from figures_registry.json.
     Returns:
       blocks: dict[key -> latex_string] where key is fig_id or subfigure_group
       img_to_key: dict[image_filename -> key] e.g. "image1.png" -> "subfig_group_1"
@@ -152,85 +152,201 @@ def build_figure_blocks(fig_reg: dict[str, Any]) -> tuple[dict[str, str], dict[s
     if not figures:
         return blocks, img_to_key
 
+    is_ieee = "ieee" in doc_class.lower()
     processed_groups: set[str] = set()
+    letters = ["a", "b", "c", "d", "e", "f", "g", "h"]
 
     for idx, fig in enumerate(figures):
         fig_id = fig.get("fig_id", f"fig{idx+1}")
         group = fig.get("subfigure_group")
         caption = fig.get("caption", "").strip()
+        main_caption = fig.get("main_caption", "").strip() or caption
         label = fig.get("label", f"fig:{fig_id}")
         output_path = fig.get("output_path", "")
         img_name = Path(output_path).name if output_path else f"{fig_id}.png"
 
-        # Map image filename (e.g. image1.png, fig1.png) to key
         img_to_key[img_name] = group if group else fig_id
         img_to_key[f"image{idx+1}.png"] = group if group else fig_id
         img_to_key[fig_id] = group if group else fig_id
 
-        # Sanitize caption
-        clean_caption = sanitize_prose(caption, {}, {})
+        clean_caption = sanitize_prose(main_caption or caption, {}, {})
         clean_caption = re.sub(r"^(?:Figure|Fig\.?)\s*\d+[:.]\s*", "", clean_caption, flags=re.IGNORECASE)
 
         if group:
             if group in processed_groups:
                 continue
             processed_groups.add(group)
-            
+
             members = [f for f in figures if f.get("subfigure_group") == group]
             n = len(members)
             avg_ar = sum(m.get("aspect_ratio", 1.0) for m in members) / n if n > 0 else 1.0
             group_caption = clean_caption or "Figures"
 
-            # Single-column first principle for subfigures:
-            # If panels are tall/narrow (ar < 0.75) and n <= 3, they fit side-by-side in a SINGLE column!
-            if avg_ar < 0.75 and n <= 3:
+            # Parse subcaptions across members
+            sub_dict = fig.get("subcaptions", {})
+            for m in members:
+                if not sub_dict and m.get("subcaptions"):
+                    sub_dict = m.get("subcaptions", {})
+
+            max_sub_len = max([len(v) for v in sub_dict.values()] or [0])
+
+            # Subfigure layout decision:
+            # If landscape (AR >= 0.9) OR if subcaptions are descriptive (> 20 chars), stack vertically
+            if avg_ar >= 0.85 or max_sub_len > 20:
+                env = "figure"
+                lines = [f"\\begin{{{env}}}[!t]", "\\centering"]
+
+                for m_idx, m in enumerate(members):
+                    m_path = m.get("output_path", "")
+                    m_name = Path(m_path).name if m_path else f"{m.get('fig_id')}.png"
+                    let = m.get("subfig_letter") or (letters[m_idx] if m_idx < len(letters) else "")
+                    sub_desc = sub_dict.get(let, "")
+                    clean_sub_desc = sanitize_prose(sub_desc, {}, {})
+                    sub_lbl = f"{label}_{let}" if let else f"{label}_{m_idx+1}"
+
+                    if is_ieee:
+                        sub_cap_str = f"{clean_sub_desc}" if clean_sub_desc else f"({let})"
+                        lines.append(f"\\subfloat[{sub_cap_str}\\label{{{sub_lbl}}}]{{%")
+                        lines.append(f"  \\includegraphics[width=0.95\\linewidth]{{{m_name}}}%")
+                        if m_idx < n - 1:
+                            lines.append("}\\\\[1ex]")
+                        else:
+                            lines.append("}")
+                    else:
+                        lines.append(f"\\begin{{subfigure}}[b]{{\\linewidth}}")
+                        lines.append("  \\centering")
+                        lines.append(f"  \\includegraphics[width=0.95\\linewidth]{{{m_name}}}")
+                        if clean_sub_desc:
+                            lines.append(f"  \\caption{{{clean_sub_desc}}}")
+                        lines.append(f"  \\label{{{sub_lbl}}}")
+                        if m_idx < n - 1:
+                            lines.append("\\end{subfigure}\\\\[1ex]")
+                        else:
+                            lines.append("\\end{subfigure}")
+
+                lines.append(f"\\caption{{{group_caption}}}")
+                lines.append(f"\\label{{{label}}}")
+                lines.append(f"\\end{{{env}}}")
+
+            elif avg_ar < 0.85 and n <= 3 and max_sub_len <= 20:
+                # Short captions + narrow portrait panels: Side-by-side in single-column
                 env = "figure"
                 w = f"{0.95 / n:.2f}\\linewidth"
-                sub_items = []
-                for m in members:
+                lines = [f"\\begin{{{env}}}[!t]", "\\centering"]
+
+                for m_idx, m in enumerate(members):
                     m_path = m.get("output_path", "")
                     m_name = Path(m_path).name if m_path else f"{m.get('fig_id')}.png"
-                    sub_items.append(f"\\includegraphics[width={w}]{{{m_name}}}")
-                img_block = "\\hfill\n".join(sub_items)
-            elif avg_ar < 0.75 and n == 4:
+                    let = m.get("subfig_letter") or (letters[m_idx] if m_idx < len(letters) else "")
+                    sub_desc = sub_dict.get(let, "")
+                    clean_sub_desc = sanitize_prose(sub_desc, {}, {})
+                    sub_lbl = f"{label}_{let}" if let else f"{label}_{m_idx+1}"
+
+                    if is_ieee:
+                        sub_cap_str = f"{clean_sub_desc}" if clean_sub_desc else f"({let})"
+                        lines.append(f"\\subfloat[{sub_cap_str}\\label{{{sub_lbl}}}]{{%")
+                        lines.append(f"  \\includegraphics[width={w}]{{{m_name}}}%")
+                        if m_idx < n - 1:
+                            lines.append("}\\hfill")
+                        else:
+                            lines.append("}")
+                    else:
+                        lines.append(f"\\begin{{subfigure}}[b]{{{w}}}")
+                        lines.append("  \\centering")
+                        lines.append(f"  \\includegraphics[width=\\linewidth]{{{m_name}}}")
+                        if clean_sub_desc:
+                            lines.append(f"  \\caption{{{clean_sub_desc}}}")
+                        lines.append(f"  \\label{{{sub_lbl}}}")
+                        if m_idx < n - 1:
+                            lines.append("\\end{subfigure}\\hfill")
+                        else:
+                            lines.append("\\end{subfigure}")
+
+                lines.append(f"\\caption{{{group_caption}}}")
+                lines.append(f"\\label{{{label}}}")
+                lines.append(f"\\end{{{env}}}")
+
+            elif n == 4:
+                # 2x2 grid in single-column
                 env = "figure"
-                w = "0.48\\linewidth"
-                sub_items = []
-                for m in members:
+                lines = [f"\\begin{{{env}}}[!t]", "\\centering"]
+
+                for m_idx, m in enumerate(members):
                     m_path = m.get("output_path", "")
                     m_name = Path(m_path).name if m_path else f"{m.get('fig_id')}.png"
-                    sub_items.append(f"\\includegraphics[width={w}]{{{m_name}}}")
-                img_block = f"{sub_items[0]}\\hfill {sub_items[1]}\\\\[1ex]\n{sub_items[2]}\\hfill {sub_items[3]}"
+                    let = m.get("subfig_letter") or (letters[m_idx] if m_idx < len(letters) else "")
+                    sub_desc = sub_dict.get(let, "")
+                    clean_sub_desc = sanitize_prose(sub_desc, {}, {})
+                    sub_lbl = f"{label}_{let}" if let else f"{label}_{m_idx+1}"
+
+                    sep = "\\hfill" if m_idx % 2 == 0 else ("\\\\[1ex]" if m_idx == 1 else "")
+                    if is_ieee:
+                        sub_cap_str = f"{clean_sub_desc}" if clean_sub_desc else f"({let})"
+                        lines.append(f"\\subfloat[{sub_cap_str}\\label{{{sub_lbl}}}]{{%")
+                        lines.append(f"  \\includegraphics[width=0.48\\linewidth]{{{m_name}}}%")
+                        lines.append(f"}}{sep}")
+                    else:
+                        lines.append("\\begin{subfigure}[b]{0.48\\linewidth}")
+                        lines.append("  \\centering")
+                        lines.append(f"  \\includegraphics[width=\\linewidth]{{{m_name}}}")
+                        if clean_sub_desc:
+                            lines.append(f"  \\caption{{{clean_sub_desc}}}")
+                        lines.append(f"  \\label{{{sub_lbl}}}")
+                        lines.append(f"\\end{{subfigure}}{sep}")
+
+                lines.append(f"\\caption{{{group_caption}}}")
+                lines.append(f"\\label{{{label}}}")
+                lines.append(f"\\end{{{env}}}")
+
             else:
-                # Genuinely wide multi-panel figure across 2 columns
+                # Double-column horizontal span
                 env = "figure*"
                 w = f"{0.96 / n:.2f}\\textwidth"
-                sub_items = []
-                for m in members:
+                lines = [f"\\begin{{{env}}}[!t]", "\\centering"]
+
+                for m_idx, m in enumerate(members):
                     m_path = m.get("output_path", "")
                     m_name = Path(m_path).name if m_path else f"{m.get('fig_id')}.png"
-                    sub_items.append(f"\\includegraphics[width={w}]{{{m_name}}}")
-                img_block = "\\hfill\n".join(sub_items)
+                    let = m.get("subfig_letter") or (letters[m_idx] if m_idx < len(letters) else "")
+                    sub_desc = sub_dict.get(let, "")
+                    clean_sub_desc = sanitize_prose(sub_desc, {}, {})
+                    sub_lbl = f"{label}_{let}" if let else f"{label}_{m_idx+1}"
 
-            lines = [
-                f"\\begin{{{env}}}[!t]",
-                "\\centering",
-                img_block,
-                f"\\caption{{{group_caption}}}",
-                f"\\label{{{label}}}",
-                f"\\end{{{env}}}",
-            ]
-            
+                    if is_ieee:
+                        sub_cap_str = f"{clean_sub_desc}" if clean_sub_desc else f"({let})"
+                        lines.append(f"\\subfloat[{sub_cap_str}\\label{{{sub_lbl}}}]{{%")
+                        lines.append(f"  \\includegraphics[width={w}]{{{m_name}}}%")
+                        if m_idx < n - 1:
+                            lines.append("}\\hfill")
+                        else:
+                            lines.append("}")
+                    else:
+                        lines.append(f"\\begin{{subfigure}}[b]{{{w}}}")
+                        lines.append("  \\centering")
+                        lines.append(f"  \\includegraphics[width=\\linewidth]{{{m_name}}}")
+                        if clean_sub_desc:
+                            lines.append(f"  \\caption{{{clean_sub_desc}}}")
+                        lines.append(f"  \\label{{{sub_lbl}}}")
+                        if m_idx < n - 1:
+                            lines.append("\\end{subfigure}\\hfill")
+                        else:
+                            lines.append("\\end{subfigure}")
+
+                lines.append(f"\\caption{{{group_caption}}}")
+                lines.append(f"\\label{{{label}}}")
+                lines.append(f"\\end{{{env}}}")
+
             block_code = "\n".join(lines)
             blocks[group] = block_code
             for m in members:
                 blocks[m.get("fig_id", "")] = block_code
+
         else:
+            # Standalone single figure
             ar = fig.get("aspect_ratio", 1.0)
-            # Single-column first: only ultra-wide (> 2.2) figures span 2 columns
             env = "figure*" if ar > 2.2 else "figure"
             width_spec = "\\textwidth" if env == "figure*" else "\\linewidth"
-            
+
             lines = [
                 f"\\begin{{{env}}}[!t]",
                 "\\centering",
@@ -255,7 +371,6 @@ def split_into_blocks(content_md: str) -> list[str]:
         if not b_clean:
             continue
 
-        # Check if block starts with a bold heading followed immediately by body prose
         m = re.match(r"^(\*{1,2}(?:\d+(?:\.\d+)*\s+)?[^*]+\*{1,2}[:\s]*\\?)\s*\n?(.*)$", b_clean, re.DOTALL)
         if m:
             h_part = m.group(1).strip().rstrip("\\").strip()
@@ -272,10 +387,18 @@ def split_into_blocks(content_md: str) -> list[str]:
 
 def parse_and_assemble(ctx: AssemblyContext) -> str:
     """Parses content.md sequentially and generates full main.tex with 100% text fidelity."""
+    spec = ctx.template_spec or {}
+    doc_class = spec.get("document_class") or "IEEEtran"
+    class_opts = spec.get("class_options", ["journal"] if doc_class == "IEEEtran" else [])
+    bib_style = spec.get("bib_style") or ("IEEEtran" if "IEEE" in doc_class else "plain")
+    is_acmart = "acmart" in doc_class.lower()
+    is_ieee = "ieeetran" in doc_class.lower() or "ieee" in doc_class.lower()
+    is_llncs = "llncs" in doc_class.lower()
+
     blocks = split_into_blocks(ctx.content_md)
     cite_map = ctx.cite_map
     cross_ref_map = ctx.cross_ref_map
-    fig_blocks, img_to_key = build_figure_blocks(ctx.fig_reg)
+    fig_blocks, img_to_key = build_figure_blocks(ctx.fig_reg, doc_class)
     tables = ctx.table_reg.get("tables", [])
 
     title = ""
@@ -295,10 +418,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
     table_idx = 0
     emitted_fig_groups: set[str] = set()
 
-    # Image regex (e.g. ![](media/image1.png){...} or ![](fig1.png))
     img_pattern = re.compile(r"!\[(.*?)\]\((.*?)\)")
-
-    # Section patterns
     section_patterns = [
         re.compile(r"^\*\*(?:(\d+(?:\.\d+)*)\s+)?([^*]+)\*\*[:\s]*$"),
         re.compile(r"^#+\s+(?:(\d+(?:\.\d+)*)\s+)?(.*)$"),
@@ -311,26 +431,26 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
             continue
         joined_block = " ".join(lines)
 
-        # 1. Check for Document Title at start
+        # 1. Document Title
         if not title and (joined_block.startswith("**") or joined_block.startswith("#")):
             cleaned_title = re.sub(r"^[\*#\s]+|[\*#\s]+$", "", joined_block).strip()
             if not any(k in cleaned_title.lower() for k in ["abstract", "introduction", "keywords", "table", "figure"]):
                 title = cleaned_title
                 continue
 
-        # 2. Check for Abstract Header
+        # 2. Abstract Header
         if re.match(r"^\*{0,2}Abstract\b", joined_block, re.IGNORECASE) and len(joined_block) < 80:
             in_abstract = True
             in_keywords = False
             continue
 
-        # 3. Check for Keywords Header
+        # 3. Keywords Header
         if re.match(r"^\*{0,2}(?:Index Terms|Keywords)\b", joined_block, re.IGNORECASE) and len(joined_block) < 80:
             in_abstract = False
             in_keywords = True
             continue
 
-        # 4. Check for References Section
+        # 4. References Section
         if re.match(r"^\*{0,2}(?:\d+\.?\d*\s+)?Reference[s]?\b", joined_block, re.IGNORECASE) and len(joined_block) < 80:
             in_references = True
             in_abstract = False
@@ -340,21 +460,18 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
         if in_references:
             continue
 
-        # 5. Check for Section / Subsection / Subsubsection / Appendix headings
+        # 5. Section Headings
         is_heading = False
-        
-        # Check Markdown hash level first
         hash_match = re.match(r"^(#{1,4})\s+(?:(\d+(?:\.\d+)*)\s+)?(.*)$", joined_block)
         if hash_match:
             h_level = len(hash_match.group(1))
             sec_num = hash_match.group(2) or ""
             sec_title = hash_match.group(3).strip()
-            
+
             if not re.match(r"^(?:Fig|Figure|Table|Tab)\b", sec_title, re.IGNORECASE) and len(sec_title) <= 140:
                 clean_heading = sanitize_prose(sec_title.rstrip(":"), cite_map, cross_ref_map)
                 clean_heading = re.sub(r"\s*\(\s*\d+\s*(?:words?|w|chars?)\s*\)", "", clean_heading, flags=re.IGNORECASE).strip()
-                
-                # Determine section type by hash level
+
                 if h_level == 1:
                     stype = "section"
                 elif h_level == 2:
@@ -363,8 +480,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
                     stype = "subsubsection"
                 else:
                     stype = "paragraph_heading"
-                    
-                # Check for Appendix
+
                 if re.match(r"^appendix\b", clean_heading, re.IGNORECASE):
                     stype = "appendix_section"
                 elif any(clean_heading.lower().startswith(k) for k in ["acknowledgment", "funding", "declaration", "ethics", "author contribution", "conflict of interest"]):
@@ -394,7 +510,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
                     clean_heading = sec_title.rstrip(":")
                     clean_heading = re.sub(r"\s*\(\s*\d+\s*(?:words?|w|chars?)\s*\)", "", clean_heading, flags=re.IGNORECASE).strip()
                     stype = "section"
-                    
+
                     if sec_num:
                         parts = sec_num.split(".")
                         if len(parts) == 2 and parts[1] != "0":
@@ -405,9 +521,9 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
                         stype = "subsection"
                     elif re.match(r"^\d+\)\s+", clean_heading) or re.match(r"^[a-z]\)\s+", clean_heading):
                         stype = "subsubsection"
-                    
+
                     clean_heading = sanitize_prose(clean_heading, cite_map, cross_ref_map)
-                    
+
                     if re.match(r"^appendix\b", clean_heading, re.IGNORECASE):
                         stype = "appendix_section"
                     elif any(clean_heading.lower().startswith(k) for k in ["acknowledgment", "funding", "declaration", "ethics", "author contribution", "conflict of interest"]):
@@ -429,7 +545,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
         if is_heading:
             continue
 
-        # 6. In Abstract
+        # 6. Abstract
         if in_abstract:
             if re.match(r"^\*{0,2}(?:Introduction|\d+\.\d+)\b", joined_block, re.IGNORECASE):
                 in_abstract = False
@@ -437,7 +553,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
                 abstract_paras.append(sanitize_prose(joined_block, cite_map, cross_ref_map))
                 continue
 
-        # 7. In Keywords
+        # 7. Keywords
         if in_keywords:
             if re.match(r"^\*{0,2}(?:Introduction|\d+\.\d+)\b", joined_block, re.IGNORECASE):
                 in_keywords = False
@@ -446,15 +562,14 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
                 keywords.extend(kws)
                 continue
 
-        # 8. Check for Images in block
+        # 8. Images in block
         img_match = img_pattern.search(joined_block)
         if img_match:
             img_src = img_match.group(2).strip()
             src_fname = Path(img_src).name
             target_key = img_to_key.get(src_fname) or img_to_key.get(Path(img_src).stem + ".png")
-            
+
             if not target_key:
-                # Try fallback matching
                 num_m = re.search(r"(\d+)", src_fname)
                 if num_m:
                     target_key = f"fig{num_m.group(1)}"
@@ -466,10 +581,9 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
                         "type": "figure_block",
                         "code": fig_blocks.get(target_key, ""),
                     })
-            # Always consume the image block without letting it fall through to prose
             continue
 
-        # 9. Check for Table in block
+        # 9. Table in block
         if joined_block.startswith("+---") or joined_block.startswith("|---") or joined_block.startswith("+==="):
             if table_idx < len(tables):
                 t_entry = tables[table_idx]
@@ -482,11 +596,11 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
                     })
             continue
 
-        # 10. Check for Standalone Figure Caption (skip if already handled by figure block)
+        # 10. Standalone Figure Caption
         if re.match(r"^(?:Fig\.?|Figure)\s*\d+[:.]", joined_block, re.IGNORECASE):
             continue
 
-        # 11. Normal Body Prose Paragraph
+        # 11. Normal Body Prose
         sanitized_para = sanitize_prose(joined_block, cite_map, cross_ref_map)
         if sanitized_para:
             current_section["elements"].append({
@@ -497,25 +611,14 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
     if current_section["elements"] or current_section["type"] != "preamble":
         sections.append(current_section)
 
-    # Dynamic Theme & Template Construction
-    spec = ctx.template_spec or {}
-    doc_class = spec.get("document_class") or "IEEEtran"
-    class_opts = spec.get("class_options", ["journal"] if doc_class == "IEEEtran" else [])
-    bib_style = spec.get("bib_style") or ("IEEEtran" if "IEEE" in doc_class else "plain")
-    column_mode = spec.get("column_mode", "twocolumn")
-
-    # Format document class line
+    # Document Header
     if class_opts:
         opts_str = ",".join(class_opts)
         doc_lines = [f"\\documentclass[{opts_str}]{{{doc_class}}}"]
     else:
         doc_lines = [f"\\documentclass{{{doc_class}}}"]
 
-    # Core packages with theme awareness
-    is_acmart = "acmart" in doc_class.lower()
-    is_ieee = "ieeetran" in doc_class.lower()
-    is_llncs = "llncs" in doc_class.lower()
-
+    # Package list
     if not is_acmart:
         doc_lines.extend([
             "\\usepackage{amsmath,amssymb}",
@@ -527,15 +630,19 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
         ])
         if is_ieee:
             doc_lines.append("\\usepackage{cite}")
+            doc_lines.append("\\usepackage[caption=false,font=footnotesize]{subfig}")
         elif not is_llncs:
             doc_lines.append("\\usepackage[numbers]{natbib}")
+            doc_lines.append("\\usepackage{subcaption}")
+        else:
+            doc_lines.append("\\usepackage{subcaption}")
         doc_lines.append("\\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}")
         doc_lines.append("\\usepackage{cleveref}")
     else:
-        # acmart has built-in amsmath, hyperref, graphicx
         doc_lines.extend([
             "\\usepackage{booktabs}",
             "\\usepackage{multirow}",
+            "\\usepackage{subcaption}",
             "\\usepackage{cleveref}",
         ])
 
@@ -552,7 +659,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
     doc_lines.append(f"\\title{{{clean_title}}}")
     doc_lines.append("")
 
-    # Authors based on theme
+    # Authors
     if is_ieee:
         doc_lines.append("\\author{\\IEEEauthorblockN{Author Name}\\\\\\IEEEauthorblockA{Department of Engineering, University}}")
     elif is_acmart:
@@ -567,7 +674,7 @@ def parse_and_assemble(ctx: AssemblyContext) -> str:
 
     doc_lines.append("")
 
-    # Abstract & Keywords (ordering depends on theme: acmart requires abstract BEFORE maketitle)
+    # Abstract & Keywords
     if is_acmart:
         if abstract_paras:
             doc_lines.append("\\begin{abstract}")
