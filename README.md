@@ -69,20 +69,22 @@ Run paper2tex on "manuscript.docx" targeting Springer LNCS.
 
 ### 1. The Recommended Folder Structure
 
-Place your Word file and an optional `figures/` folder in the same place:
+Place your Word file and an optional `figures/` folder in the same place (supports `.png`, `.jpg`, `.pdf`, `.svg`):
 
 ```
 my_paper_project/
 │
 ├── my_paper.docx               <-- Your main paper draft
 │
-└── figures/                    <-- (Optional but recommended for best quality)
-    ├── fig1_a.pdf              <-- Subfigure (a) (Vector PDF or high-res PNG)
-    ├── fig1_b.pdf              <-- Subfigure (b)
-    ├── fig1_c.pdf              <-- Subfigure (c)
-    ├── fig2.png                <-- Standalone Figure 2 (>= 300 DPI)
-    └── fig3.svg                <-- Vector plot for Figure 3
+└── figures/                    <-- (Optional folder with your images)
+    ├── fig1_a.png              <-- Subfigure (a) (Regular PNG, JPG, or PDF)
+    ├── fig1_b.png              <-- Subfigure (b)
+    ├── fig1_c.png              <-- Subfigure (c)
+    ├── fig2.png                <-- Standalone Figure 2
+    └── fig3.pdf                <-- (Optional) Vector PDF plot from Python/Matplotlib
 ```
+
+> 💡 **Any format works!** You can use everyday `.png` or `.jpg` images, or export vector `.pdf` / `.svg` plots from Python/MATLAB. Or if you don't have a folder, just say **`extract`** and `paper2tex` gets them right out of Word!
 
 ---
 
