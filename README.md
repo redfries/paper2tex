@@ -7,7 +7,7 @@
 
 ---
 
-## 😫 The Problem Everyone Faces
+## - The Problem Everyone Faces
 
 Every semester, students and researchers go through the same nightmare:
 
